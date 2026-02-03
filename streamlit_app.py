@@ -7,7 +7,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v6", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v7", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -21,13 +21,24 @@ except:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
-# --- 2. 銘柄データ (検索用DB) ---
+# --- 2. 銘柄データ (為替を大幅強化) ---
+FOREX = [
+    {"C": "💱 Forex (Major)", "T": "USDJPY=X", "N": "USD/JPY (ドル円)"},
+    {"C": "💱 Forex (Major)", "T": "EURJPY=X", "N": "EUR/JPY (ユーロ円)"},
+    {"C": "💱 Forex (Major)", "T": "EURUSD=X", "N": "EUR/USD (ユーロドル)"},
+    {"C": "💱 Forex (Major)", "T": "GBPUSD=X", "N": "GBP/USD (ポンドドル)"},
+    {"C": "💱 Forex (Major)", "T": "GBPJPY=X", "N": "GBP/JPY (ポンド円)"},
+    {"C": "💱 Forex (Major)", "T": "AUDUSD=X", "N": "AUD/USD (豪ドル米ドル)"},
+    {"C": "💱 Forex (Major)", "T": "AUDJPY=X", "N": "AUD/JPY (豪ドル円)"},
+    {"C": "💱 Forex (Major)", "T": "DX-Y.NYB", "N": "Dollar Index (ドル指数)"}, # ドルの総合的な強さ
+    {"C": "💱 Forex (Major)", "T": "CNY=X", "N": "USD/CNY (ドル元)"},
+]
+
 US_TECH = [
     {"C": "🇺🇸 US Tech", "T": "AAPL", "N": "Apple"}, {"C": "🇺🇸 US Tech", "T": "MSFT", "N": "Microsoft"},
     {"C": "🇺🇸 US Tech", "T": "NVDA", "N": "NVIDIA"}, {"C": "🇺🇸 US Tech", "T": "GOOGL", "N": "Alphabet"},
     {"C": "🇺🇸 US Tech", "T": "AMZN", "N": "Amazon"}, {"C": "🇺🇸 US Tech", "T": "META", "N": "Meta"},
     {"C": "🇺🇸 US Tech", "T": "TSLA", "N": "Tesla"}, {"C": "🇺🇸 US Tech", "T": "AVGO", "N": "Broadcom"},
-    {"C": "🇺🇸 US Tech", "T": "ORCL", "N": "Oracle"}, {"C": "🇺🇸 US Tech", "T": "CRM", "N": "Salesforce"},
     {"C": "🇺🇸 US Tech", "T": "AMD", "N": "AMD"}, {"C": "🇺🇸 US Tech", "T": "NFLX", "N": "Netflix"},
     {"C": "🇺🇸 US Tech", "T": "PLTR", "N": "Palantir"}, {"C": "🇺🇸 US Tech", "T": "COIN", "N": "Coinbase"}
 ]
@@ -59,13 +70,12 @@ CRYPTO = [
     {"C": "🪙 Crypto", "T": "SOL-USD", "N": "Solana"}, {"C": "🪙 Crypto", "T": "XRP-USD", "N": "XRP"},
     {"C": "🪙 Crypto", "T": "DOGE-USD", "N": "Dogecoin"}, {"C": "🪙 Crypto", "T": "BNB-USD", "N": "BNB"}
 ]
-FOREX = [
-    {"C": "💱 Forex", "T": "USDJPY=X", "N": "USD/JPY"}, {"C": "💱 Forex", "T": "EURUSD=X", "N": "EUR/USD"}
-]
-TICKER_DATA_RAW = US_TECH + US_MAJOR + JAPAN + ETF + CRYPTO + FOREX
+
+# リスト結合 (FOREXを先頭にして見つけやすくしました)
+TICKER_DATA_RAW = FOREX + US_TECH + US_MAJOR + JAPAN + ETF + CRYPTO
 ticker_df_master = pd.DataFrame(TICKER_DATA_RAW).rename(columns={"C": "Category", "T": "Ticker", "N": "Name"})
 
-# --- 3. 期間設定ロジック ---
+# --- 3. 期間設定 ---
 PERIOD_OPTIONS = {
     "1日": "1d", "1週間": "5d", "1ヶ月": "1mo", "3ヶ月": "3mo",
     "6ヶ月": "6mo", "1年": "1y", "3年": "3y", "5年": "5y",
@@ -147,26 +157,23 @@ def delete_from_watchlist(item_id):
 
 # --- 5. アプリ画面構築 ---
 
-st.title("📈 Pro Investor Dashboard v6")
+st.title("📈 Pro Investor Dashboard v7 (Forex Edition)")
 
-# セッション管理
 if 'selected_tickers' not in st.session_state:
     st.session_state.selected_tickers = ["AAPL"]
 
-# ウォッチリスト取得
 w_df = fetch_watchlist()
 
 # ==========================================
-# サイドバー (管理メニュー)
+# サイドバー (管理パネル)
 # ==========================================
 st.sidebar.header("🕹️ 管理パネル")
 
-# 1. 銘柄追加フォーム
 with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
-    st.caption("リストにない銘柄もコードを入力すれば追加できます")
+    st.caption("為替も追加可能 (例: USDJPY=X)")
     with st.form("sb_add"):
-        t_in = st.text_input("コード (例: 7203.T, BTC-USD)").upper().strip()
-        n_in = st.text_input("メモ (例: トヨタ, Bitcoin)")
+        t_in = st.text_input("コード (例: 7203.T, USDJPY=X)").upper().strip()
+        n_in = st.text_input("メモ (例: トヨタ, ドル円)")
         if st.form_submit_button("追加"):
             if t_in:
                 add_to_watchlist(t_in, n_in)
@@ -175,7 +182,6 @@ with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
             else:
                 st.warning("コードを入力してください")
 
-# 2. 削除機能
 with st.sidebar.expander("🗑️ 登録銘柄の削除", expanded=False):
     if not w_df.empty:
         w_df['del_label'] = w_df['ticker'] + " - " + w_df['note'].fillna("")
@@ -193,17 +199,10 @@ with st.sidebar.expander("🗑️ 登録銘柄の削除", expanded=False):
         st.info("登録銘柄がありません")
 
 st.sidebar.markdown("---")
-
-# 3. 期間選択
-period_label = st.sidebar.selectbox(
-    "期間設定", 
-    list(PERIOD_OPTIONS.keys()), 
-    index=5 
-)
-
+period_label = st.sidebar.selectbox("期間設定", list(PERIOD_OPTIONS.keys()), index=5)
 st.sidebar.markdown("---")
 
-# 4. 分析対象の選択 (ここをボタン形式に変更！)
+# 分析対象選択 (pills)
 st.sidebar.subheader("📊 分析・比較する銘柄")
 available_options = []
 default_sel = []
@@ -212,17 +211,13 @@ if not w_df.empty:
     w_df['display'] = w_df['ticker'] + " - " + w_df['note'].fillna("")
     available_options = w_df['display'].tolist()
     
-    # セッションの選択状態を維持
     valid_selected = [s for s in st.session_state.selected_tickers if any(s == op.split(" - ")[0] for op in available_options)]
     
     if not valid_selected and available_options:
         valid_selected = [available_options[0].split(" - ")[0]]
     
-    # デフォルト値を復元
     default_options = [op for op in available_options if op.split(" - ")[0] in valid_selected]
 
-    # ★ここが変更点：st.pills を使ってボタン形式で選択★
-    # selection_mode="multi" で複数選択可能なボタンになります
     selected_displays = st.sidebar.pills(
         "タップして選択 (複数可)",
         options=available_options,
@@ -230,7 +225,6 @@ if not w_df.empty:
         selection_mode="multi"
     )
     
-    # 何も選ばれていないときは空リストになるので安全策
     if selected_displays:
         current_tickers = [x.split(" - ")[0] for x in selected_displays]
     else:
@@ -252,7 +246,7 @@ tab_chart, tab_news, tab_db = st.tabs(["📊 チャート分析", "📰 関連�
 # --- タブ1: チャート ---
 with tab_chart:
     if not current_tickers:
-        st.info("👈 左のボタンを押して、分析したい銘柄を選んでください。")
+        st.info("👈 左のボタンで銘柄を選んでください。株と為替を同時に選ぶと比較できます。")
     
     elif len(current_tickers) == 1:
         # 単体モード
@@ -269,7 +263,7 @@ with tab_chart:
             pct = (chg / prev['Close']) * 100
             
             c1, c2, c3 = st.columns(3)
-            c1.metric("Current", f"${latest['Close']:,.2f}", f"{chg:,.2f} ({pct:.2f}%)")
+            c1.metric("Current", f"{latest['Close']:,.2f}", f"{chg:,.2f} ({pct:.2f}%)")
             c2.metric("Period", period_label)
             c3.metric("High", f"${df['High'].max():,.2f}")
             
@@ -299,9 +293,9 @@ with tab_chart:
             st.error("データ取得エラー。コードが正しいか確認してください。")
 
     else:
-        # 比較モード
+        # 比較モード (株 vs 為替など)
         st.subheader("📊 パフォーマンス比較 (正規化)")
-        st.caption("※ 選択したすべての銘柄のグラフを重ねて表示します")
+        st.caption("※ 開始時点を 0% として、株価や為替レートの変化率を比較します")
         fig_comp = go.Figure()
         
         for t in current_tickers:
@@ -339,7 +333,7 @@ with tab_news:
 with tab_db:
     st.header("📋 銘柄データベース")
     st.info("コードをコピーして、サイドバーの「新規追加」へ貼り付けてください。")
-    search_q = st.text_input("検索", placeholder="例: Japan, Gold...")
+    search_q = st.text_input("検索", placeholder="例: USD, 7203...")
     
     df_db = ticker_df_master
     if search_q:
