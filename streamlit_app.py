@@ -55,8 +55,8 @@ def analyze_content(text_input, image_input=None):
     """
 
     try:
-        # 画像対応モデルに変更 (gemini-1.5-flash)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 画像対応モデルに変更 (gemini-pro)
+        model = genai.GenerativeModel('gemini-pro')
         
         content = [base_prompt]
         
