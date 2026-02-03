@@ -33,8 +33,8 @@ def extract_text_from_pdf(uploaded_file):
         return None
 
 def analyze_content(text_input, image_input=None):
-    # ★修正：あなたのリストにあった「gemini-2.0-flash」を指定
-    target_model = 'gemini-2.0-flash'
+    # ★修正：より軽量な「Lite」モデルに変更して、混雑を回避
+    target_model = 'gemini-2.0-flash-lite'
     
     base_prompt = """
     あなたは大学の優秀なチューターです。講義資料をもとに、学習用「要約」と「4択クイズ」を作成してください。
@@ -61,7 +61,7 @@ def analyze_content(text_input, image_input=None):
         return json.loads(clean_text)
     
     except Exception as e:
-        # 万が一これでもダメな場合のエラー表示
+        # エラー時のメッセージ
         return {"error": f"AI生成エラー: {e}"}
 
 # --- 3. データベース保存 ---
@@ -77,7 +77,7 @@ def delete_smart_note(note_id):
 
 # --- 4. アプリ画面 ---
 st.title("🎓 Smart Lecture Mate")
-st.caption(f"Powered by Gemini 2.0 Flash")
+st.caption(f"Powered by Gemini 2.0 Flash Lite")
 
 tab1, tab2 = st.tabs(["📝 作成", "📚 復習"])
 
@@ -103,10 +103,13 @@ with tab1:
 
         if st.button("🚀 分析開始", type="primary"):
             if subject_in:
-                with st.spinner("Gemini 2.0 Flashが分析中..."):
+                with st.spinner("Gemini 2.0 Flash Lite が分析中..."):
+                    # 念のため、エラーが出た際に少し待って再トライするような処理は複雑になるため、
+                    # 今回はモデル変更で対応します。
                     res = analyze_content(user_text, user_image)
                     if "error" in res:
                         st.error("AI分析に失敗しました")
+                        st.warning("ヒント: 無料枠の上限に達している可能性があります。1分ほど待ってから再試行してください。")
                         st.text(res['error'])
                     else:
                         st.session_state['res'] = res
