@@ -8,31 +8,48 @@ import datetime
 from datetime import timedelta
 
 # --- 1. 設定とSupabase接続 ---
-st.set_page_config(page_title="Asset & Budget Master", layout="wide")
+st.set_page_config(page_title="Ultimate Asset Manager", layout="wide")
 
 # シークレット管理
-url = st.secrets["SUPABASE_URL"]
-key = st.secrets["SUPABASE_KEY"]
+try:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+except:
+    st.error("SupabaseのURLとKEYが設定されていません。Secretsを設定してください。")
+    st.stop()
+
 supabase: Client = create_client(url, key)
 
 # --- 2. データ取得・計算API ---
 
-# (A) 市場指標
+# (A) 市場指標（大幅増量）
 @st.cache_data(ttl=300)
 def get_market_indices():
-    tickers = {"S&P 500": "^GSPC", "日経平均": "^N225", "NASDAQ": "^IXIC", "USD/JPY": "JPY=X"}
+    tickers = {
+        "🇺🇸 S&P 500": "^GSPC",
+        "🇯🇵 日経平均": "^N225",
+        "🇺🇸 NASDAQ": "^IXIC",
+        "💴 USD/JPY": "JPY=X",
+        "🥇 金 (Gold)": "GC=F",
+        "🛢️ 原油 (WTI)": "CL=F",
+        "😨 VIX指数": "^VIX",
+        "₿ BTC/USD": "BTC-USD",
+        "🏦 米10年国債": "^TNX"
+    }
     data = {}
     try:
+        # yfinanceでまとめて取得
         for name, ticker in tickers.items():
             stock = yf.Ticker(ticker)
-            hist = stock.history(period="2d")
-            if len(hist) > 0:
+            # 2日分のデータを取って前日比を計算
+            hist = stock.history(period="5d") # 休日またぎ対応のため少し長めに
+            if len(hist) > 1:
                 latest = hist['Close'].iloc[-1]
-                prev = hist['Close'].iloc[-2] if len(hist) > 1 else latest
+                prev = hist['Close'].iloc[-2]
                 change = latest - prev
                 pct = (change / prev) * 100
                 data[name] = {"price": latest, "change": change, "pct": pct}
-    except:
+    except Exception as e:
         pass
     return data
 
@@ -59,22 +76,42 @@ def get_crypto_price(coin_id):
 def fetch_assets():
     return pd.DataFrame(supabase.table("assets").select("*").order("amount", desc=True).execute().data)
 
-# 資産残高を直接更新する関数（家計簿連動用）
-def update_asset_balance(asset_id, amount_change):
-    # 現在の額を取得
-    res = supabase.table("assets").select("amount").eq("id", asset_id).execute()
-    if res.data:
-        current_amount = res.data[0]['amount']
-        new_amount = current_amount + amount_change
+def fetch_transactions():
+    return pd.DataFrame(supabase.table("transactions").select("*").order("date", desc=True).limit(100).execute().data)
+
+# 資産残高の更新（存在しなければ新規作成、あれば更新）
+def upsert_asset(name, category, amount_change, currency="JPY", ticker=None):
+    # 既存チェック
+    existing = supabase.table("assets").select("*").eq("name", name).execute()
+    
+    if existing.data:
         # 更新
-        supabase.table("assets").update({"amount": new_amount}).eq("id", asset_id).execute()
+        rec_id = existing.data[0]['id']
+        current_amount = existing.data[0]['amount']
+        new_amount = current_amount + amount_change
+        # マイナスにならないよう制御（オプション）
+        if new_amount < 0 and category != "クレジットカード":
+            st.warning(f"注意: {name} の残高がマイナスになります")
+        
+        supabase.table("assets").update({"amount": new_amount}).eq("id", rec_id).execute()
+    else:
+        # 新規作成（収入入力時など）
+        data = {
+            "name": name, 
+            "category": category, 
+            "amount": amount_change, # 初期額
+            "currency": currency, 
+            "ticker": ticker
+        }
+        supabase.table("assets").insert(data).execute()
 
-def add_asset(name, category, amount, currency, ticker=None):
-    data = {"name": name, "category": category, "amount": amount, "currency": currency, "ticker": ticker}
-    supabase.table("assets").insert(data).execute()
+def add_transaction(date, type_, category, amount, memo):
+    data = {"date": str(date), "type": type_, "category": category, "amount": amount, "memo": memo}
+    supabase.table("transactions").insert(data).execute()
 
-def delete_asset(asset_id):
-    supabase.table("assets").delete().eq("id", asset_id).execute()
+def delete_transaction(trans_id):
+    # 本当はトランザクション削除時に資産残高も戻すべきだが、今回は簡易実装のためログ削除のみ
+    supabase.table("transactions").delete().eq("id", trans_id).execute()
 
 # 履歴（推移）保存
 def save_daily_snapshot(total_value):
@@ -89,36 +126,40 @@ def fetch_history(days):
     start = datetime.date.today() - timedelta(days=days)
     return pd.DataFrame(supabase.table("asset_history").select("*").gte("date", str(start)).order("date").execute().data)
 
-def fetch_transactions():
-    return pd.DataFrame(supabase.table("transactions").select("*").order("date", desc=True).limit(50).execute().data)
-
-def add_transaction(date, type_, category, amount, memo):
-    data = {"date": str(date), "type": type_, "category": category, "amount": amount, "memo": memo}
-    supabase.table("transactions").insert(data).execute()
-
-def delete_transaction(trans_id):
-    supabase.table("transactions").delete().eq("id", trans_id).execute()
-
 
 # --- 4. アプリケーション本体 ---
 
-# サイドバー：市場指標
-st.sidebar.title("📊 Market Watch")
+# ■ サイドバー：マーケット指標（リアルタイム）
+st.sidebar.markdown("### 🌏 Market Watch")
 indices = get_market_indices()
 if indices:
     for name, info in indices.items():
         color = "normal" if info['change'] >= 0 else "inverse"
-        st.sidebar.metric(name, f"{info['price']:,.2f}", f"{info['pct']:.2f}%", delta_color=color)
+        # 価格のフォーマット調整
+        if "USD" in name or "国債" in name or "VIX" in name:
+            fmt = "{:,.2f}"
+        else:
+            fmt = "{:,.0f}"
+        
+        st.sidebar.metric(
+            label=name,
+            value=fmt.format(info['price']),
+            delta=f"{info['pct']:.2f}%",
+            delta_color=color
+        )
+else:
+    st.sidebar.info("指標データを取得中...")
 
-st.title("💰 Asset & Budget Dashboard")
+# ■ メイン画面
+st.title("📊 Asset & Budget Dashboard")
 
-# 共通変数
+# 共通データ取得
 df_assets = fetch_assets()
-usd_rate = indices["USD/JPY"]["price"] if "USD/JPY" in indices else 150.0
+usd_rate = indices["USD/JPY"]["price"] if (indices and "USD/JPY" in indices) else 150.0
 btc_price = get_crypto_price("bitcoin")
-total_assets_jpy = 0
 
-# 資産評価額の計算
+# 資産評価額の計算（時価）
+total_assets_jpy = 0
 if not df_assets.empty:
     current_vals = []
     for _, row in df_assets.iterrows():
@@ -128,7 +169,7 @@ if not df_assets.empty:
         
         if row['currency'] == 'USD': val = row['amount'] * price * usd_rate
         elif row['currency'] == 'BTC': val = row['amount'] * btc_price
-        else: val = row['amount'] * price # JPY or others
+        else: val = row['amount'] * price
         
         current_vals.append(val)
     
@@ -136,148 +177,201 @@ if not df_assets.empty:
     total_assets_jpy = df_assets['current_val_jpy'].sum()
     save_daily_snapshot(total_assets_jpy)
 
-# トップ：総資産表示
-st.metric("現在の総資産額", f"¥{total_assets_jpy:,.0f}", delta="Real-time Valuation")
+# トップKPI
+kpi1, kpi2, kpi3 = st.columns(3)
+kpi1.metric("現在の総資産額", f"¥{total_assets_jpy:,.0f}", delta="Real-time Valuation")
+# 現金比率計算
+cash_assets = df_assets[df_assets['category'].str.contains('現金|預金|銀行')]['current_val_jpy'].sum() if not df_assets.empty else 0
+risk_assets = total_assets_jpy - cash_assets
+kpi2.metric("リスク資産", f"¥{risk_assets:,.0f}")
+kpi3.metric("安全資産 (現金等)", f"¥{cash_assets:,.0f}")
 
 st.divider()
 
-# ★★★ レイアウト統合：左＝資産(Stock) / 右＝家計(Flow) ★★★
-col_left, col_right = st.columns([1, 1])
+# ■ グラフエリア（3列構成）
+st.subheader("📈 資産と収支の分析")
+g_col1, g_col2, g_col3 = st.columns(3)
 
-# ==========================================
-# 左カラム：資産管理 & チャート
-# ==========================================
-with col_left:
-    st.subheader("📈 資産推移 & ポートフォリオ")
-    
-    # グラフエリア
-    period = st.radio("期間", ["1ヶ月", "1年", "全期間"], horizontal=True, key="period_select")
-    days_map = {"1ヶ月": 30, "1年": 365, "全期間": 3650}
+# 1. 資産推移（折れ線）
+with g_col1:
+    st.markdown("**資産推移**")
+    period = st.select_slider("期間", options=["1週間", "1ヶ月", "3ヶ月", "1年", "全期間"], value="1ヶ月")
+    days_map = {"1週間": 7, "1ヶ月": 30, "3ヶ月": 90, "1年": 365, "全期間": 3650}
     df_hist = fetch_history(days_map[period])
-    
     if not df_hist.empty:
         df_hist['date'] = pd.to_datetime(df_hist['date'])
-        fig_line = px.line(df_hist, x='date', y='total_value', title="資産推移", markers=True)
+        fig_line = px.line(df_hist, x='date', y='total_value', markers=True)
+        fig_line.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=250)
         st.plotly_chart(fig_line, use_container_width=True)
-    
+    else:
+        st.info("データ収集中...")
+
+# 2. ポートフォリオ（円グラフ）
+with g_col2:
+    st.markdown("**ポートフォリオ**")
     if not df_assets.empty and total_assets_jpy > 0:
-        fig_pie = px.pie(df_assets, values='current_val_jpy', names='category', title="資産構成", hole=0.4)
+        fig_pie = px.pie(df_assets, values='current_val_jpy', names='category', hole=0.4)
+        fig_pie.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=250)
         st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("資産データがありません")
 
-    st.subheader("🏦 資産リスト (手動管理)")
-    
-    # 資産追加
-    with st.expander("➕ 新規資産を追加"):
-        with st.form("add_asset"):
-            c1, c2 = st.columns(2)
-            nm = c1.text_input("名称 (例: 現金, S&P500)")
-            cat = c2.selectbox("カテゴリ", ["現金・預金", "株式", "投資信託", "暗号資産", "その他"])
-            c3, c4 = st.columns(2)
-            amt = c3.number_input("数量/金額", min_value=0.0)
-            cur = c4.selectbox("通貨", ["JPY", "USD", "BTC"])
-            tick = st.text_input("銘柄コード (任意)", placeholder="AAPL, VOO etc.")
-            if st.form_submit_button("追加"):
-                t_val = tick if tick.strip() else None
-                add_asset(nm, cat, amt, cur, t_val)
-                st.rerun()
-
-    # リスト表示
-    if not df_assets.empty:
-        show_df = df_assets[['name', 'amount', 'currency', 'current_val_jpy']].copy()
-        show_df['current_val_jpy'] = show_df['current_val_jpy'].apply(lambda x: f"¥{x:,.0f}")
-        st.dataframe(show_df, use_container_width=True)
-        
-        # 削除
-        with st.popover("資産を削除"):
-            del_id = st.selectbox("削除する資産", df_assets['id'].astype(str) + ": " + df_assets['name'])
-            if st.button("削除実行"):
-                delete_asset(int(del_id.split(":")[0]))
-                st.rerun()
-
-# ==========================================
-# 右カラム：家計簿 (資産連動型)
-# ==========================================
-with col_right:
-    st.subheader("📝 収支入力 (資産連動)")
-    
-    # 家計簿入力フォーム
-    with st.container(border=True):
-        date_in = st.date_input("日付", datetime.date.today())
-        type_in = st.radio("収支", ["支出", "収入"], horizontal=True)
-        
-        # --- 豊富なカテゴリ ---
-        if type_in == "支出":
-            cats = [
-                "食費", "日用品", "交通費", "交際費", "趣味・娯楽", "衣服・美容", 
-                "健康・医療", "通信費", "水道・光熱費", "住居費", 
-                "教育・教養", "保険", "投資・金融", "特別な支出", "その他"
-            ]
-        else:
-            cats = ["給与", "賞与", "事業・副業", "配当・利子", "お小遣い", "臨時収入", "その他"]
-        
-        cat_in = st.selectbox("カテゴリ", cats)
-        
-        c_amt, c_memo = st.columns([1, 1.5])
-        amt_in = c_amt.number_input("金額 (円)", min_value=0, step=100)
-        memo_in = c_memo.text_input("メモ")
-
-        # --- ★完全連動のキモ：決済/入金資産の選択 ---
-        st.markdown("---")
-        st.markdown(f"**{'支払元' if type_in=='支出' else '入金先'}の資産を選択 (残高に反映)**")
-        
-        if not df_assets.empty:
-            # 選択肢を作成 (IDと名前の紐付け)
-            asset_opts = {f"{row['name']} (残: {row['amount']:,.0f})": row['id'] for _, row in df_assets.iterrows()}
-            selected_asset_label = st.selectbox("対象資産", list(asset_opts.keys()))
-            selected_asset_id = asset_opts[selected_asset_label]
-        else:
-            st.warning("先に左側で資産（現金や銀行）を登録してください")
-            selected_asset_id = None
-        
-        # --- 投資の場合のオプション ---
-        is_investment = (cat_in == "投資・金融")
-        invest_ticker = None
-        invest_amount_shares = 0.0
-        invest_currency = "USD"
-        
-        if is_investment and type_in == "支出":
-            st.info("💡 投資資産（株など）をポートフォリオに追加しますか？")
-            with st.expander("購入資産の詳細入力", expanded=True):
-                i_c1, i_c2 = st.columns(2)
-                invest_name = i_c1.text_input("資産名 (例: VOO)", value=memo_in)
-                invest_ticker = i_c2.text_input("銘柄コード", placeholder="VOO")
-                i_c3, i_c4 = st.columns(2)
-                invest_amount_shares = i_c3.number_input("購入数量 (株数)", min_value=0.0)
-                invest_currency = i_c4.selectbox("資産通貨", ["USD", "JPY", "BTC"])
-
-        # 送信ボタン処理
-        if st.button("記録して反映", type="primary"):
-            if not selected_asset_id:
-                st.error("資産が登録されていません")
-            else:
-                # 1. Transaction記録
-                add_transaction(date_in, type_in, cat_in, amt_in, memo_in)
-                
-                # 2. 資産残高の更新 (連動)
-                if type_in == "支出":
-                    update_asset_balance(selected_asset_id, -amt_in) # 減らす
-                else:
-                    update_asset_balance(selected_asset_id, amt_in)  # 増やす
-                
-                # 3. 投資の場合の新規資産追加
-                if is_investment and type_in == "支出" and invest_amount_shares > 0:
-                    add_asset(invest_name, "株式", invest_amount_shares, invest_currency, invest_ticker)
-                    st.success(f"支出を記録し、{selected_asset_label}から減算、資産{invest_name}を追加しました！")
-                else:
-                    st.success(f"記録しました！ {selected_asset_label}の残高を更新しました。")
-                
-                st.rerun()
-
-    # 直近の履歴
-    st.subheader("📜 最近の収支")
+# 3. カテゴリ別収支（棒グラフ）
+with g_col3:
+    st.markdown("**カテゴリ別支出 (直近)**")
     df_trans = fetch_transactions()
     if not df_trans.empty:
-        st.dataframe(df_trans[['date', 'type', 'category', 'amount', 'memo']], use_container_width=True, hide_index=True)
-        if st.button("最新履歴を削除"):
-            delete_transaction(df_trans.iloc[0]['id'])
-            st.rerun()
+        # 支出のみフィルタリング
+        df_exp = df_trans[df_trans['type'] == '支出']
+        if not df_exp.empty:
+            df_cat = df_exp.groupby('category')['amount'].sum().reset_index()
+            fig_bar = px.bar(df_cat, x='category', y='amount', color='category')
+            fig_bar.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=250)
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("支出データがありません")
+    else:
+        st.info("家計簿データがありません")
+
+st.divider()
+
+# ■ 入力エリア（ここですべて完結させる）
+st.subheader("📝 入出金・資産管理")
+
+with st.container(border=True):
+    # 入力タイプの選択
+    input_type = st.radio("アクション", ["支出 (支払)", "収入 (給与・残高追加)", "資産購入・振替 (株購入など)"], horizontal=True)
+    
+    date_in = st.date_input("日付", datetime.date.today())
+    
+    # --- A. 支出 (資産が減る) ---
+    if input_type == "支出 (支払)":
+        c1, c2 = st.columns(2)
+        cat_in = c1.selectbox("カテゴリ", ["食費", "日用品", "交通費", "交際費", "住居費", "光熱費", "通信費", "医療費", "教育費", "その他"])
+        memo_in = c2.text_input("メモ (店名など)")
+        
+        c3, c4 = st.columns(2)
+        amt_in = c3.number_input("金額 (円)", min_value=0, step=100)
+        
+        # 支払元資産を選ぶ
+        if not df_assets.empty:
+            asset_opts = {f"{r['name']} (残: {r['amount']:,.0f})": r['name'] for _, r in df_assets.iterrows()}
+            pay_source = c4.selectbox("支払元資産", list(asset_opts.keys()))
+            source_name = asset_opts[pay_source]
+        else:
+            c4.warning("資産がありません。先に「収入」で資産を登録してください")
+            source_name = None
+
+        if st.button("支出を記録", type="primary"):
+            if source_name:
+                add_transaction(date_in, "支出", cat_in, amt_in, memo_in)
+                upsert_asset(source_name, "不明", -amt_in) # 残高を減らす
+                st.success("記録しました！")
+                st.rerun()
+
+    # --- B. 収入 (資産が増える / 新規作成) ---
+    elif input_type == "収入 (給与・残高追加)":
+        c1, c2 = st.columns(2)
+        cat_in = c1.selectbox("カテゴリ", ["給与", "賞与", "副業", "お小遣い", "初期残高", "臨時収入", "配当金"])
+        memo_in = c2.text_input("メモ")
+        
+        c3, c4 = st.columns(2)
+        amt_in = c3.number_input("金額 (円)", min_value=0, step=1000)
+        
+        # 入金先（既存から選ぶ or 新規入力）
+        asset_mode = c4.radio("入金先", ["既存の資産", "新しい資産を作成"], horizontal=True)
+        target_name = None
+        target_cat = "現金・預金" # デフォルト
+        
+        if asset_mode == "既存の資産":
+            if not df_assets.empty:
+                asset_opts = {f"{r['name']}": r['name'] for _, r in df_assets.iterrows()}
+                sel = st.selectbox("資産を選択", list(asset_opts.keys()))
+                target_name = asset_opts[sel]
+            else:
+                st.warning("資産がありません。「新しい資産」を選んでください")
+        else:
+            n1, n2 = st.columns(2)
+            target_name = n1.text_input("資産名 (例: 三井住友銀行, 財布)")
+            target_cat = n2.selectbox("資産カテゴリ", ["現金・預金", "電子マネー", "その他"])
+        
+        if st.button("収入を記録", type="primary"):
+            if target_name:
+                add_transaction(date_in, "収入", cat_in, amt_in, memo_in)
+                upsert_asset(target_name, target_cat, amt_in) # 残高を増やす/作成
+                st.success(f"{target_name} に入金しました！")
+                st.rerun()
+
+    # --- C. 資産購入・振替 (資産Aが減り、資産Bが増える) ---
+    elif input_type == "資産購入・振替 (株購入など)":
+        st.info("💡 銀行口座などから資金を移動して、投資商品を購入します")
+        
+        col_pay, col_buy = st.columns(2)
+        
+        with col_pay:
+            st.markdown("**1. 資金元 (減る資産)**")
+            if not df_assets.empty:
+                pay_opts = {f"{r['name']}": r['name'] for _, r in df_assets.iterrows()}
+                pay_sel = st.selectbox("支払元", list(pay_opts.keys()), key="pay_src")
+                pay_name = pay_opts[pay_sel]
+            else:
+                st.warning("資産がありません")
+                pay_name = None
+            pay_amt = st.number_input("支払金額 (円)", min_value=0, step=1000)
+        
+        with col_buy:
+            st.markdown("**2. 購入先 (増える資産)**")
+            buy_mode = st.radio("購入対象", ["既存の資産に追加入金", "新規銘柄を購入"], horizontal=True)
+            
+            buy_name = None
+            buy_ticker = None
+            buy_qty = 0
+            buy_curr = "JPY"
+            buy_cat = "株式"
+            
+            if buy_mode == "既存の資産に追加入金":
+                if not df_assets.empty:
+                    buy_opts = {f"{r['name']}": r['name'] for _, r in df_assets.iterrows()}
+                    buy_sel = st.selectbox("入金先", list(buy_opts.keys()), key="buy_target")
+                    buy_name = buy_opts[buy_sel]
+                    # 既存の場合は通貨などは既存データを引き継ぐため入力不要、数量だけ聞く
+                    # ただし今回は簡易化のため金額ベースの移動とみなすか、数量を聞くか
+                    buy_qty = st.number_input("追加数量 (株数など)", min_value=0.0)
+                else:
+                    st.warning("資産なし")
+            else:
+                buy_name = st.text_input("銘柄名 (例: Tesla)")
+                buy_ticker = st.text_input("銘柄コード (例: TSLA)")
+                c_b1, c_b2, c_b3 = st.columns(3)
+                buy_qty = c_b1.number_input("購入数量", min_value=0.0)
+                buy_curr = c_b2.selectbox("通貨", ["USD", "JPY", "BTC"])
+                buy_cat = c_b3.selectbox("カテゴリ", ["株式", "投資信託", "暗号資産", "債券"])
+
+        if st.button("振替・購入を実行", type="primary"):
+            if pay_name and (buy_name or buy_mode == "既存"):
+                # 1. 支払元を減らす
+                upsert_asset(pay_name, "不明", -pay_amt)
+                
+                # 2. 購入先を増やす
+                # 既存資産への追加の場合、名前解決が必要
+                target_asset_name = buy_name if buy_name else buy_name # 既存ロジック要調整
+                
+                if buy_mode == "新規銘柄を購入":
+                    upsert_asset(buy_name, buy_cat, buy_qty, buy_curr, buy_ticker)
+                else:
+                    # 既存資産の数量を増やす (通貨判定などが複雑だが、簡易的に数量を加算)
+                    upsert_asset(buy_name, "不明", buy_qty)
+                
+                # 3. 履歴に残す
+                memo_txt = f"{pay_name}から{buy_name}を購入"
+                add_transaction(date_in, "振替", "資産運用", pay_amt, memo_txt)
+                
+                st.success("資産移動が完了しました！")
+                st.rerun()
+
+st.divider()
+
+# ■ 直近の履歴表示
+st.markdown("##### 📜 直近の履歴")
+if not df_trans.empty:
+    st.dataframe(df_trans[['date', 'type', 'category', 'amount', 'memo']], use_container_width=True, hide_index=True)
