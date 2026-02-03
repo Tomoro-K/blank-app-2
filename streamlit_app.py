@@ -7,7 +7,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v5", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v6", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -21,8 +21,7 @@ except:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
-# --- 2. 銘柄データ (300種以上 - 検索用DB) ---
-# ※ここにない銘柄でも、手動入力すればウォッチリストに追加可能です
+# --- 2. 銘柄データ (検索用DB) ---
 US_TECH = [
     {"C": "🇺🇸 US Tech", "T": "AAPL", "N": "Apple"}, {"C": "🇺🇸 US Tech", "T": "MSFT", "N": "Microsoft"},
     {"C": "🇺🇸 US Tech", "T": "NVDA", "N": "NVIDIA"}, {"C": "🇺🇸 US Tech", "T": "GOOGL", "N": "Alphabet"},
@@ -126,7 +125,6 @@ def get_watchlist_news(tickers):
     except:
         return []
 
-# DB操作系
 def fetch_watchlist():
     try:
         return pd.DataFrame(supabase.table("watchlist").select("*").order("created_at", desc=True).execute().data)
@@ -149,7 +147,7 @@ def delete_from_watchlist(item_id):
 
 # --- 5. アプリ画面構築 ---
 
-st.title("📈 Pro Investor Dashboard v5")
+st.title("📈 Pro Investor Dashboard v6")
 
 # セッション管理
 if 'selected_tickers' not in st.session_state:
@@ -163,7 +161,7 @@ w_df = fetch_watchlist()
 # ==========================================
 st.sidebar.header("🕹️ 管理パネル")
 
-# 1. 銘柄追加フォーム (任意のコード追加)
+# 1. 銘柄追加フォーム
 with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
     st.caption("リストにない銘柄もコードを入力すれば追加できます")
     with st.form("sb_add"):
@@ -177,18 +175,13 @@ with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
             else:
                 st.warning("コードを入力してください")
 
-# 2. 削除機能 (専用メニュー)
+# 2. 削除機能
 with st.sidebar.expander("🗑️ 登録銘柄の削除", expanded=False):
     if not w_df.empty:
-        # 表示用ラベル
         w_df['del_label'] = w_df['ticker'] + " - " + w_df['note'].fillna("")
-        
-        # 削除したい銘柄を選択（複数可）
         to_delete = st.multiselect("削除する銘柄を選択:", w_df['del_label'])
-        
         if st.button("選択した銘柄を削除", type="primary"):
             if to_delete:
-                # 選択された銘柄のIDを取得
                 ids = w_df[w_df['del_label'].isin(to_delete)]['id'].tolist()
                 for i in ids:
                     delete_from_watchlist(i)
@@ -210,7 +203,8 @@ period_label = st.sidebar.selectbox(
 
 st.sidebar.markdown("---")
 
-# 4. 分析対象の選択
+# 4. 分析対象の選択 (ここをボタン形式に変更！)
+st.sidebar.subheader("📊 分析・比較する銘柄")
 available_options = []
 default_sel = []
 
@@ -218,24 +212,32 @@ if not w_df.empty:
     w_df['display'] = w_df['ticker'] + " - " + w_df['note'].fillna("")
     available_options = w_df['display'].tolist()
     
-    # セッションの選択状態を維持しつつ、削除されたものがあれば除外
+    # セッションの選択状態を維持
     valid_selected = [s for s in st.session_state.selected_tickers if any(s == op.split(" - ")[0] for op in available_options)]
     
-    # 何も選択がなければ一番上を選択
     if not valid_selected and available_options:
         valid_selected = [available_options[0].split(" - ")[0]]
     
-    # multiselect用のデフォルト値を復元
+    # デフォルト値を復元
     default_options = [op for op in available_options if op.split(" - ")[0] in valid_selected]
 
-    selected_displays = st.sidebar.multiselect(
-        "📊 分析・比較する銘柄",
+    # ★ここが変更点：st.pills を使ってボタン形式で選択★
+    # selection_mode="multi" で複数選択可能なボタンになります
+    selected_displays = st.sidebar.pills(
+        "タップして選択 (複数可)",
         options=available_options,
-        default=default_options
+        default=default_options,
+        selection_mode="multi"
     )
     
-    current_tickers = [x.split(" - ")[0] for x in selected_displays]
+    # 何も選ばれていないときは空リストになるので安全策
+    if selected_displays:
+        current_tickers = [x.split(" - ")[0] for x in selected_displays]
+    else:
+        current_tickers = []
+        
     st.session_state.selected_tickers = current_tickers
+
 else:
     st.sidebar.info("ウォッチリストが空です。上のメニューから追加してください。")
     current_tickers = []
@@ -250,7 +252,7 @@ tab_chart, tab_news, tab_db = st.tabs(["📊 チャート分析", "📰 関連�
 # --- タブ1: チャート ---
 with tab_chart:
     if not current_tickers:
-        st.warning("👈 サイドバーで分析する銘柄を選んでください")
+        st.info("👈 左のボタンを押して、分析したい銘柄を選んでください。")
     
     elif len(current_tickers) == 1:
         # 単体モード
@@ -299,6 +301,7 @@ with tab_chart:
     else:
         # 比較モード
         st.subheader("📊 パフォーマンス比較 (正規化)")
+        st.caption("※ 選択したすべての銘柄のグラフを重ねて表示します")
         fig_comp = go.Figure()
         
         for t in current_tickers:
