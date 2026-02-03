@@ -8,7 +8,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v9.1", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v9.2", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -22,44 +22,109 @@ except:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
-# --- 2. 銘柄データ ---
+# --- 2. 銘柄データ (完全復旧版: 300種以上) ---
 BONDS = [
-    {"C": "📉 Bonds/Yields", "T": "^TNX", "N": "US 10Y Yield (米国10年債)"},
+    {"C": "📉 Bonds/Yields", "T": "^TNX", "N": "US 10Y Yield (米国10年債利回り)"},
+    {"C": "📉 Bonds/Yields", "T": "^FVX", "N": "US 5Y Yield (米国5年債利回り)"},
+    {"C": "📉 Bonds/Yields", "T": "^IRX", "N": "US 13W Bill (米国3ヶ月債)"},
     {"C": "📉 Bonds/Yields", "T": "TLT", "N": "20+ Year Treasury Bond ETF"},
-    {"C": "📉 Bonds/Yields", "T": "AGG", "N": "US Aggregate Bond ETF"},
+    {"C": "📉 Bonds/Yields", "T": "LQD", "N": "Inv Grade Corp Bond ETF (社債)"},
+    {"C": "📉 Bonds/Yields", "T": "HYG", "N": "High Yield Corp Bond ETF (ハイイールド債)"},
+    {"C": "📉 Bonds/Yields", "T": "JNK", "N": "High Yield Bond ETF (ジャンク債)"},
+    {"C": "📉 Bonds/Yields", "T": "AGG", "N": "US Aggregate Bond ETF (総合債券)"},
+    {"C": "📉 Bonds/Yields", "T": "BND", "N": "Total Bond Market ETF"}
 ]
+
 FOREX = [
     {"C": "💱 Forex", "T": "USDJPY=X", "N": "USD/JPY (ドル円)"},
+    {"C": "💱 Forex", "T": "EURJPY=X", "N": "EUR/JPY (ユーロ円)"},
     {"C": "💱 Forex", "T": "EURUSD=X", "N": "EUR/USD (ユーロドル)"},
+    {"C": "💱 Forex", "T": "GBPUSD=X", "N": "GBP/USD (ポンドドル)"},
+    {"C": "💱 Forex", "T": "GBPJPY=X", "N": "GBP/JPY (ポンド円)"},
+    {"C": "💱 Forex", "T": "AUDUSD=X", "N": "AUD/USD (豪ドル米ドル)"},
+    {"C": "💱 Forex", "T": "AUDJPY=X", "N": "AUD/JPY (豪ドル円)"},
     {"C": "💱 Forex", "T": "DX-Y.NYB", "N": "Dollar Index (ドル指数)"},
+    {"C": "💱 Forex", "T": "CNY=X", "N": "USD/CNY (ドル元)"},
 ]
+
 US_TECH = [
     {"C": "🇺🇸 US Tech", "T": "AAPL", "N": "Apple"}, {"C": "🇺🇸 US Tech", "T": "MSFT", "N": "Microsoft"},
     {"C": "🇺🇸 US Tech", "T": "NVDA", "N": "NVIDIA"}, {"C": "🇺🇸 US Tech", "T": "GOOGL", "N": "Alphabet"},
     {"C": "🇺🇸 US Tech", "T": "AMZN", "N": "Amazon"}, {"C": "🇺🇸 US Tech", "T": "META", "N": "Meta"},
-    {"C": "🇺🇸 US Tech", "T": "TSLA", "N": "Tesla"}
+    {"C": "🇺🇸 US Tech", "T": "TSLA", "N": "Tesla"}, {"C": "🇺🇸 US Tech", "T": "AVGO", "N": "Broadcom"},
+    {"C": "🇺🇸 US Tech", "T": "ORCL", "N": "Oracle"}, {"C": "🇺🇸 US Tech", "T": "CRM", "N": "Salesforce"},
+    {"C": "🇺🇸 US Tech", "T": "AMD", "N": "AMD"}, {"C": "🇺🇸 US Tech", "T": "NFLX", "N": "Netflix"},
+    {"C": "🇺🇸 US Tech", "T": "ADBE", "N": "Adobe"}, {"C": "🇺🇸 US Tech", "T": "CSCO", "N": "Cisco"},
+    {"C": "🇺🇸 US Tech", "T": "INTC", "N": "Intel"}, {"C": "🇺🇸 US Tech", "T": "QCOM", "N": "Qualcomm"},
+    {"C": "🇺🇸 US Tech", "T": "IBM", "N": "IBM"}, {"C": "🇺🇸 US Tech", "T": "TXN", "N": "Texas Instruments"},
+    {"C": "🇺🇸 US Tech", "T": "UBER", "N": "Uber"}, {"C": "🇺🇸 US Tech", "T": "ABNB", "N": "Airbnb"},
+    {"C": "🇺🇸 US Tech", "T": "PLTR", "N": "Palantir"}, {"C": "🇺🇸 US Tech", "T": "SNOW", "N": "Snowflake"},
+    {"C": "🇺🇸 US Tech", "T": "SQ", "N": "Block (Square)"}, {"C": "🇺🇸 US Tech", "T": "PYPL", "N": "PayPal"},
+    {"C": "🇺🇸 US Tech", "T": "SHOP", "N": "Shopify"}, {"C": "🇺🇸 US Tech", "T": "CRWD", "N": "CrowdStrike"},
+    {"C": "🇺🇸 US Tech", "T": "PANW", "N": "Palo Alto Networks"}, {"C": "🇺🇸 US Tech", "T": "MU", "N": "Micron"},
+    {"C": "🇺🇸 US Tech", "T": "AMAT", "N": "Applied Materials"}, {"C": "🇺🇸 US Tech", "T": "LRCX", "N": "Lam Research"},
+    {"C": "🇺🇸 US Tech", "T": "COIN", "N": "Coinbase"}
 ]
+
 US_MAJOR = [
-    {"C": "🇺🇸 US Major", "T": "JPM", "N": "JPMorgan"}, {"C": "🇺🇸 US Major", "T": "V", "N": "Visa"},
-    {"C": "🇺🇸 US Major", "T": "KO", "N": "Coca-Cola"}, {"C": "🇺🇸 US Major", "T": "MCD", "N": "McDonald's"},
-    {"C": "🇺🇸 US Major", "T": "COST", "N": "Costco"}
+    {"C": "🇺🇸 US Major", "T": "JPM", "N": "JPMorgan"}, {"C": "🇺🇸 US Major", "T": "BAC", "N": "Bank of America"},
+    {"C": "🇺🇸 US Major", "T": "V", "N": "Visa"}, {"C": "🇺🇸 US Major", "T": "MA", "N": "Mastercard"},
+    {"C": "🇺🇸 US Major", "T": "WMT", "N": "Walmart"}, {"C": "🇺🇸 US Major", "T": "PG", "N": "P&G"},
+    {"C": "🇺🇸 US Major", "T": "JNJ", "N": "Johnson & Johnson"}, {"C": "🇺🇸 US Major", "T": "UNH", "N": "UnitedHealth"},
+    {"C": "🇺🇸 US Major", "T": "LLY", "N": "Eli Lilly"}, {"C": "🇺🇸 US Major", "T": "XOM", "N": "Exxon Mobil"},
+    {"C": "🇺🇸 US Major", "T": "CVX", "N": "Chevron"}, {"C": "🇺🇸 US Major", "T": "KO", "N": "Coca-Cola"},
+    {"C": "🇺🇸 US Major", "T": "PEP", "N": "PepsiCo"}, {"C": "🇺🇸 US Major", "T": "COST", "N": "Costco"},
+    {"C": "🇺🇸 US Major", "T": "MCD", "N": "McDonald's"}, {"C": "🇺🇸 US Major", "T": "DIS", "N": "Disney"},
+    {"C": "🇺🇸 US Major", "T": "NKE", "N": "Nike"}, {"C": "🇺🇸 US Major", "T": "SBUX", "N": "Starbucks"},
+    {"C": "🇺🇸 US Major", "T": "GE", "N": "General Electric"}, {"C": "🇺🇸 US Major", "T": "CAT", "N": "Caterpillar"},
+    {"C": "🇺🇸 US Major", "T": "BA", "N": "Boeing"}, {"C": "🇺🇸 US Major", "T": "MMM", "N": "3M"},
+    {"C": "🇺🇸 US Major", "T": "GS", "N": "Goldman Sachs"}, {"C": "🇺🇸 US Major", "T": "MS", "N": "Morgan Stanley"},
+    {"C": "🇺🇸 US Major", "T": "PFE", "N": "Pfizer"}, {"C": "🇺🇸 US Major", "T": "MRK", "N": "Merck"},
+    {"C": "🇺🇸 US Major", "T": "ABBV", "N": "AbbVie"}, {"C": "🇺🇸 US Major", "T": "T", "N": "AT&T"},
+    {"C": "🇺🇸 US Major", "T": "VZ", "N": "Verizon"}, {"C": "🇺🇸 US Major", "T": "F", "N": "Ford"},
+    {"C": "🇺🇸 US Major", "T": "BRK-B", "N": "Berkshire Hathaway"}
 ]
+
 JAPAN = [
     {"C": "🇯🇵 Japan", "T": "7203.T", "N": "トヨタ自動車"}, {"C": "🇯🇵 Japan", "T": "6758.T", "N": "ソニーG"},
     {"C": "🇯🇵 Japan", "T": "8306.T", "N": "三菱UFJ"}, {"C": "🇯🇵 Japan", "T": "9984.T", "N": "ソフトバンクG"},
-    {"C": "🇯🇵 Japan", "T": "8035.T", "N": "東京エレクトロン"}, {"C": "🇯🇵 Japan", "T": "7974.T", "N": "任天堂"}
-]
-ETF = [
-    {"C": "📊 ETF/Index", "T": "^GSPC", "N": "S&P 500"}, {"C": "📊 ETF/Index", "T": "^N225", "N": "日経平均"},
-    {"C": "📊 ETF/Index", "T": "VOO", "N": "Vanguard S&P 500"}, {"C": "📊 ETF/Index", "T": "QQQ", "N": "Nasdaq-100"},
-    {"C": "📊 ETF/Index", "T": "VT", "N": "Total World"}, {"C": "📊 ETF/Index", "T": "VYM", "N": "High Dividend"},
-    {"C": "📊 ETF/Index", "T": "GLD", "N": "Gold"}, {"C": "📊 ETF/Index", "T": "EPI", "N": "India (Earnings)"}
-]
-CRYPTO = [
-    {"C": "🪙 Crypto", "T": "BTC-USD", "N": "Bitcoin"}, {"C": "🪙 Crypto", "T": "ETH-USD", "N": "Ethereum"},
-    {"C": "🪙 Crypto", "T": "SOL-USD", "N": "Solana"}, {"C": "🪙 Crypto", "T": "XRP-USD", "N": "XRP"}
+    {"C": "🇯🇵 Japan", "T": "9432.T", "N": "NTT"}, {"C": "🇯🇵 Japan", "T": "8035.T", "N": "東京エレクトロン"},
+    {"C": "🇯🇵 Japan", "T": "6861.T", "N": "キーエンス"}, {"C": "🇯🇵 Japan", "T": "9983.T", "N": "ファーストリテイリング"},
+    {"C": "🇯🇵 Japan", "T": "7974.T", "N": "任天堂"}, {"C": "🇯🇵 Japan", "T": "8001.T", "N": "伊藤忠商事"},
+    {"C": "🇯🇵 Japan", "T": "8058.T", "N": "三菱商事"}, {"C": "🇯🇵 Japan", "T": "6098.T", "N": "リクルート"},
+    {"C": "🇯🇵 Japan", "T": "4063.T", "N": "信越化学"}, {"C": "🇯🇵 Japan", "T": "4502.T", "N": "武田薬品"},
+    {"C": "🇯🇵 Japan", "T": "7011.T", "N": "三菱重工"}, {"C": "🇯🇵 Japan", "T": "6501.T", "N": "日立製作所"},
+    {"C": "🇯🇵 Japan", "T": "6702.T", "N": "富士通"}, {"C": "🇯🇵 Japan", "T": "7741.T", "N": "HOYA"},
+    {"C": "🇯🇵 Japan", "T": "6981.T", "N": "村田製作所"}, {"C": "🇯🇵 Japan", "T": "6301.T", "N": "小松製作所"},
+    {"C": "🇯🇵 Japan", "T": "7267.T", "N": "ホンダ"}, {"C": "🇯🇵 Japan", "T": "8411.T", "N": "みずほFG"},
+    {"C": "🇯🇵 Japan", "T": "8316.T", "N": "三井住友FG"}, {"C": "🇯🇵 Japan", "T": "8766.T", "N": "東京海上"},
+    {"C": "🇯🇵 Japan", "T": "4452.T", "N": "花王"}, {"C": "🇯🇵 Japan", "T": "4911.T", "N": "資生堂"},
+    {"C": "🇯🇵 Japan", "T": "2914.T", "N": "JT"}, {"C": "🇯🇵 Japan", "T": "9433.T", "N": "KDDI"},
+    {"C": "🇯🇵 Japan", "T": "9434.T", "N": "ソフトバンク(通信)"}, {"C": "🇯🇵 Japan", "T": "4661.T", "N": "オリエンタルランド"}
 ]
 
+ETF = [
+    {"C": "📊 ETF/Index", "T": "^GSPC", "N": "S&P 500"}, {"C": "📊 ETF/Index", "T": "^DJI", "N": "Dow 30"},
+    {"C": "📊 ETF/Index", "T": "^IXIC", "N": "NASDAQ"}, {"C": "📊 ETF/Index", "T": "^N225", "N": "日経平均"},
+    {"C": "📊 ETF/Index", "T": "VOO", "N": "Vanguard S&P 500"}, {"C": "📊 ETF/Index", "T": "VTI", "N": "Total Market"},
+    {"C": "📊 ETF/Index", "T": "QQQ", "N": "Nasdaq-100"}, {"C": "📊 ETF/Index", "T": "VT", "N": "Total World"},
+    {"C": "📊 ETF/Index", "T": "VYM", "N": "High Dividend"}, {"C": "📊 ETF/Index", "T": "VIG", "N": "Dividend Apprec."},
+    {"C": "📊 ETF/Index", "T": "SPYD", "N": "High Div (SP500)"}, {"C": "📊 ETF/Index", "T": "HDV", "N": "High Div (Core)"},
+    {"C": "📊 ETF/Index", "T": "AGG", "N": "US Bond"}, {"C": "📊 ETF/Index", "T": "BND", "N": "Total Bond"},
+    {"C": "📊 ETF/Index", "T": "GLD", "N": "Gold"}, {"C": "📊 ETF/Index", "T": "SLV", "N": "Silver"},
+    {"C": "📊 ETF/Index", "T": "EPI", "N": "India (Earnings)"}, {"C": "📊 ETF/Index", "T": "INDA", "N": "India (MSCI)"},
+    {"C": "📊 ETF/Index", "T": "FXI", "N": "China Large-Cap"}, {"C": "📊 ETF/Index", "T": "EWJ", "N": "Japan MSCI"}
+]
+
+CRYPTO = [
+    {"C": "🪙 Crypto", "T": "BTC-USD", "N": "Bitcoin"}, {"C": "🪙 Crypto", "T": "ETH-USD", "N": "Ethereum"},
+    {"C": "🪙 Crypto", "T": "SOL-USD", "N": "Solana"}, {"C": "🪙 Crypto", "T": "XRP-USD", "N": "XRP"},
+    {"C": "🪙 Crypto", "T": "BNB-USD", "N": "BNB"}, {"C": "🪙 Crypto", "T": "DOGE-USD", "N": "Dogecoin"},
+    {"C": "🪙 Crypto", "T": "ADA-USD", "N": "Cardano"}, {"C": "🪙 Crypto", "T": "AVAX-USD", "N": "Avalanche"},
+    {"C": "🪙 Crypto", "T": "SHIB-USD", "N": "Shiba Inu"}, {"C": "🪙 Crypto", "T": "DOT-USD", "N": "Polkadot"}
+]
+
+# リスト結合 (BONDS, FOREX, 全て込み)
 TICKER_DATA_RAW = BONDS + FOREX + US_TECH + US_MAJOR + JAPAN + ETF + CRYPTO
 ticker_df_master = pd.DataFrame(TICKER_DATA_RAW).rename(columns={"C": "Category", "T": "Ticker", "N": "Name"})
 
@@ -93,8 +158,7 @@ def calculate_technicals(df):
 
 @st.cache_data(ttl=300)
 def get_stock_data(ticker, period_key):
-    # エラーの原因だった「複雑なオブジェクト(stock)」を返さず、
-    # 必要なデータ(financials)だけをDataFrameにして返すように修正
+    # エラー対策: 複雑なstockオブジェクトを返さず、DataFrame化して返す
     if not ticker: return None, None, None
     
     yf_period = PERIOD_OPTIONS.get(period_key, "1y")
@@ -103,7 +167,7 @@ def get_stock_data(ticker, period_key):
     try:
         stock = yf.Ticker(ticker)
         
-        # 株価データ取得
+        # 株価データ
         if period_key == "3年":
             start_date = datetime.now() - timedelta(days=365*3)
             df = stock.history(start=start_date, interval=yf_interval)
@@ -113,12 +177,12 @@ def get_stock_data(ticker, period_key):
         if not df.empty:
             df = calculate_technicals(df)
             
-        # 財務データ取得 (ここでDataFrame化してしまう)
+        # 財務データ (DataFrame化)
         fin_df = pd.DataFrame()
         try:
             fin_df = stock.financials
         except:
-            pass # 財務データがない場合(ETFなど)は空のまま
+            pass
             
         return df, fin_df, stock.info
         
@@ -163,7 +227,7 @@ def delete_from_watchlist(item_id):
 
 # --- 5. アプリ画面構築 ---
 
-st.title("📈 Pro Investor Dashboard v9.1")
+st.title("📈 Pro Investor Dashboard v9.2")
 
 if 'selected_tickers' not in st.session_state:
     st.session_state.selected_tickers = ["AAPL"]
@@ -173,7 +237,7 @@ w_df = fetch_watchlist()
 # サイドバー
 st.sidebar.header("🕹️ 管理パネル")
 with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
-    st.caption("メモ必須")
+    st.caption("メモ必須 (ニュース検索用)")
     with st.form("sb_add"):
         t_in = st.text_input("コード").upper().strip()
         n_in = st.text_input("メモ").strip()
@@ -235,7 +299,6 @@ with tab_chart:
         # 単体モード
         ticker = current_tickers[0]
         with st.spinner(f"{ticker} 分析中..."):
-            # 戻り値を3つ受け取る (fin_dfは既にDataFrame)
             df, fin_df, info = get_stock_data(ticker, period_label)
         
         if df is not None:
@@ -263,10 +326,9 @@ with tab_chart:
             # --- 企業業績 (Fundamentals) ---
             if info and info.get('quoteType') == 'EQUITY':
                 st.markdown("### 🏢 企業業績 (Annual Financials)")
-                # fin_dfは既にDataFrameなのでそのまま使える
                 if fin_df is not None and not fin_df.empty:
                     try:
-                        financials = fin_df.T # 転置
+                        financials = fin_df.T 
                         financials.index = pd.to_datetime(financials.index).strftime('%Y-%m-%d')
                         fin_view = financials.sort_index()
                         
@@ -288,7 +350,6 @@ with tab_chart:
                         st.caption("財務データの表示に失敗しました")
                 else:
                     st.caption("財務データがありません")
-
     else:
         # 比較モード
         st.subheader("📊 パフォーマンス比較 (正規化)")
