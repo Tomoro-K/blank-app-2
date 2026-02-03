@@ -21,7 +21,7 @@ except:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
-# --- 2. 銘柄データ (債券を追加) ---
+# --- 2. 銘柄データ (検索用プリセット) ---
 BONDS = [
     {"C": "📉 Bonds/Yields", "T": "^TNX", "N": "US 10Y Yield (米国10年債利回り)"},
     {"C": "📉 Bonds/Yields", "T": "^FVX", "N": "US 5Y Yield (米国5年債利回り)"},
@@ -29,7 +29,6 @@ BONDS = [
     {"C": "📉 Bonds/Yields", "T": "TLT", "N": "20+ Year Treasury Bond ETF"},
     {"C": "📉 Bonds/Yields", "T": "LQD", "N": "Inv Grade Corp Bond ETF (社債)"},
     {"C": "📉 Bonds/Yields", "T": "HYG", "N": "High Yield Corp Bond ETF (ハイイールド債)"},
-    {"C": "📉 Bonds/Yields", "T": "JNK", "N": "High Yield Bond ETF (ジャンク債)"},
     {"C": "📉 Bonds/Yields", "T": "AGG", "N": "US Aggregate Bond ETF (総合債券)"},
     {"C": "📉 Bonds/Yields", "T": "BND", "N": "Total Bond Market ETF"}
 ]
@@ -75,7 +74,7 @@ CRYPTO = [
     {"C": "🪙 Crypto", "T": "SOL-USD", "N": "Solana"}, {"C": "🪙 Crypto", "T": "XRP-USD", "N": "XRP"}
 ]
 
-# リスト結合 (BONDSを追加)
+# リスト結合
 TICKER_DATA_RAW = BONDS + FOREX + US_TECH + US_MAJOR + JAPAN + ETF + CRYPTO
 ticker_df_master = pd.DataFrame(TICKER_DATA_RAW).rename(columns={"C": "Category", "T": "Ticker", "N": "Name"})
 
@@ -126,51 +125,49 @@ def get_stock_data(ticker, period_key):
         return None, None
 
 @st.cache_data(ttl=600)
-def get_massive_news(tickers):
+def get_massive_news(search_queries):
     """
-    日本語100件、英語100件、合計最大200件のニュースを取得。
-    複数銘柄の場合は 'OR' 条件で検索（いずれかの銘柄を含む記事）
+    ウォッチリストの「メモ（名称）」を使ってニュースを検索します。
     """
-    if not tickers: return []
+    if not search_queries: return []
     
     try:
-        # API制限回避のため、検索クエリに含める銘柄数を制限（最大20個程度）
-        # 20個以上選択されていても、上位20個で検索を作成
-        limit = 20
-        query_list = tickers[:limit]
+        # 空文字やNoneを除去し、最大20件に制限
+        valid_queries = [q for q in search_queries if q and len(q) > 1][:20]
+        if not valid_queries: return []
+
+        # "Toyota OR Bitcoin OR ..." の形にする (OR検索 = いずれかを含む)
+        query_string = " OR ".join(valid_queries)
         
-        # "AAPL OR MSFT OR ..." の形にする (OR検索 = いずれかを含む)
-        query_string = " OR ".join(query_list)
-        
-        # 1. 英語ニュース (最大100件)
+        # 1. 英語ニュース
         en_articles = []
         try:
             en_res = newsapi.get_everything(
                 q=query_string,
                 language='en',
                 sort_by='publishedAt',
-                page_size=100  # 最大100
+                page_size=100
             )
             en_articles = en_res.get('articles', [])
         except:
             pass
             
-        # 2. 日本語ニュース (最大100件)
+        # 2. 日本語ニュース
         jp_articles = []
         try:
             jp_res = newsapi.get_everything(
                 q=query_string,
                 language='jp',
                 sort_by='publishedAt',
-                page_size=100  # 最大100
+                page_size=100
             )
             jp_articles = jp_res.get('articles', [])
         except:
             pass
-            
-        # 3. 結合して日付順にソート
+
+        # 結合して新しい順にソート
         all_articles = en_articles + jp_articles
-        # publishedAtキーがあるものだけ対象
+        # 日付情報がないものは除外してソート
         all_articles = sorted(
             [a for a in all_articles if a.get('publishedAt')], 
             key=lambda x: x['publishedAt'], 
@@ -204,7 +201,7 @@ def delete_from_watchlist(item_id):
 
 # --- 5. アプリ画面構築 ---
 
-st.title("📈 Pro Investor Dashboard v8 (Ultimate)")
+st.title("📈 Pro Investor Dashboard v8")
 
 if 'selected_tickers' not in st.session_state:
     st.session_state.selected_tickers = ["AAPL"]
@@ -216,21 +213,21 @@ w_df = fetch_watchlist()
 # ==========================================
 st.sidebar.header("🕹️ 管理パネル")
 
-# 追加
+# 追加フォーム (メモ必須)
 with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
-    st.caption("債券も追加可 (例: ^TNX, TLT)")
+    st.caption("ニュース検索のため、メモも必ず入力してください")
     with st.form("sb_add"):
         t_in = st.text_input("コード (例: ^TNX, 7203.T)").upper().strip()
-        n_in = st.text_input("メモ (例: 米10年債, トヨタ)")
+        n_in = st.text_input("メモ (例: 米10年債, トヨタ)").strip()
         if st.form_submit_button("追加"):
-            if t_in:
+            if t_in and n_in:
                 add_to_watchlist(t_in, n_in)
-                st.success(f"{t_in} を追加しました")
+                st.success(f"{t_in} ({n_in}) を追加しました")
                 st.rerun()
             else:
-                st.warning("コードを入力してください")
+                st.error("⚠️ コードとメモの両方を入力してください。")
 
-# 削除
+# 削除機能
 with st.sidebar.expander("🗑️ 登録銘柄の削除", expanded=False):
     if not w_df.empty:
         w_df['del_label'] = w_df['ticker'] + " - " + w_df['note'].fillna("")
@@ -251,7 +248,7 @@ st.sidebar.markdown("---")
 period_label = st.sidebar.selectbox("期間設定", list(PERIOD_OPTIONS.keys()), index=5)
 st.sidebar.markdown("---")
 
-# Pills選択
+# Pills選択 (ボタン形式)
 st.sidebar.subheader("📊 分析・比較する銘柄")
 available_options = []
 default_sel = []
@@ -318,7 +315,6 @@ with tab_chart:
             c3.metric("High", f"${df['High'].max():,.2f}")
             
             fig = go.Figure()
-            # 債券利回りの場合は「株価」ではないので表記に注意（コード上はPriceとして処理）
             fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price/Yield"))
             if 'SMA20' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'))
             if 'SMA50' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color='blue', width=1), name='SMA 50'))
@@ -346,7 +342,7 @@ with tab_chart:
     else:
         # 比較モード
         st.subheader("📊 パフォーマンス比較 (正規化)")
-        st.caption("※ 開始時点を 0% として変化率を表示。債券利回り、為替、株価を同時に比較できます。")
+        st.caption("※ 開始時点を 0% として変化率を表示。")
         fig_comp = go.Figure()
         
         for t in current_tickers:
@@ -361,27 +357,42 @@ with tab_chart:
         fig_comp.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.3)
         st.plotly_chart(fig_comp, use_container_width=True)
 
-# --- タブ2: ニュース (大量取得版) ---
+# --- タブ2: ニュース (メモ検索版) ---
 with tab_news:
     st.header("📰 関連ニュース (日/英・OR検索)")
+    
     if current_tickers:
-        st.caption(f"検索対象: {', '.join(current_tickers)}")
-        st.info("💡 選択された銘柄の「いずれか」に関連する記事を、日本語・英語合わせて最大200件取得します。")
+        # 選択された銘柄の「メモ」を取得して検索
+        search_terms = []
+        if not w_df.empty:
+            selected_rows = w_df[w_df['ticker'].isin(current_tickers)]
+            search_terms = [row['note'] if row['note'] else row['ticker'] for _, row in selected_rows.iterrows()]
         
-        with st.spinner("大量のニュースを収集中... 少し時間がかかります"):
-            arts = get_massive_news(current_tickers)
+        if not search_terms: search_terms = current_tickers
+
+        st.caption(f"検索キーワード: {', '.join(search_terms)}")
+        
+        with st.spinner("ニュースを収集中..."):
+            arts = get_massive_news(search_terms)
         
         if arts:
             st.success(f"{len(arts)} 件の記事が見つかりました")
             for a in arts:
                 with st.container(border=True):
                     c_img, c_txt = st.columns([1, 3])
-                    if a.get('urlToImage'): c_img.image(a['urlToImage'], use_container_width=True)
+                    if a.get('urlToImage'): 
+                        try:
+                            c_img.image(a['urlToImage'], use_container_width=True)
+                        except:
+                            c_img.text("No Image")
                     c_txt.subheader(a.get('title', 'No Title'))
-                    c_txt.caption(f"{a['source']['name']} | {a['publishedAt'][:10]}")
+                    date_str = a['publishedAt'][:10] + " " + a['publishedAt'][11:16]
+                    c_txt.caption(f"{a['source']['name']} | {date_str}")
+                    c_txt.write(a.get('description', ''))
                     c_txt.markdown(f"[記事を読む]({a['url']})")
         else:
-            st.info("ニュースが見つかりませんでした")
+            st.warning("ニュースが見つかりませんでした。")
+            st.markdown("メモ欄が記号（コード）のままだとニュースが出にくい場合があります。")
     else:
         st.warning("銘柄を選択してください")
 
