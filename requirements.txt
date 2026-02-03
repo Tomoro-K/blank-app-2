@@ -3,4 +3,4 @@ supabase
 yfinance
 plotly
 pandas
-feedparser
+newsapi-python
