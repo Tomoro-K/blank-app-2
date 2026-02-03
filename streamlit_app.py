@@ -7,7 +7,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v7", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v8", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -21,41 +21,46 @@ except:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
-# --- 2. 銘柄データ (為替を大幅強化) ---
+# --- 2. 銘柄データ (債券を追加) ---
+BONDS = [
+    {"C": "📉 Bonds/Yields", "T": "^TNX", "N": "US 10Y Yield (米国10年債利回り)"},
+    {"C": "📉 Bonds/Yields", "T": "^FVX", "N": "US 5Y Yield (米国5年債利回り)"},
+    {"C": "📉 Bonds/Yields", "T": "^IRX", "N": "US 13W Bill (米国3ヶ月債)"},
+    {"C": "📉 Bonds/Yields", "T": "TLT", "N": "20+ Year Treasury Bond ETF"},
+    {"C": "📉 Bonds/Yields", "T": "LQD", "N": "Inv Grade Corp Bond ETF (社債)"},
+    {"C": "📉 Bonds/Yields", "T": "HYG", "N": "High Yield Corp Bond ETF (ハイイールド債)"},
+    {"C": "📉 Bonds/Yields", "T": "JNK", "N": "High Yield Bond ETF (ジャンク債)"},
+    {"C": "📉 Bonds/Yields", "T": "AGG", "N": "US Aggregate Bond ETF (総合債券)"},
+    {"C": "📉 Bonds/Yields", "T": "BND", "N": "Total Bond Market ETF"}
+]
+
 FOREX = [
-    {"C": "💱 Forex (Major)", "T": "USDJPY=X", "N": "USD/JPY (ドル円)"},
-    {"C": "💱 Forex (Major)", "T": "EURJPY=X", "N": "EUR/JPY (ユーロ円)"},
-    {"C": "💱 Forex (Major)", "T": "EURUSD=X", "N": "EUR/USD (ユーロドル)"},
-    {"C": "💱 Forex (Major)", "T": "GBPUSD=X", "N": "GBP/USD (ポンドドル)"},
-    {"C": "💱 Forex (Major)", "T": "GBPJPY=X", "N": "GBP/JPY (ポンド円)"},
-    {"C": "💱 Forex (Major)", "T": "AUDUSD=X", "N": "AUD/USD (豪ドル米ドル)"},
-    {"C": "💱 Forex (Major)", "T": "AUDJPY=X", "N": "AUD/JPY (豪ドル円)"},
-    {"C": "💱 Forex (Major)", "T": "DX-Y.NYB", "N": "Dollar Index (ドル指数)"}, # ドルの総合的な強さ
-    {"C": "💱 Forex (Major)", "T": "CNY=X", "N": "USD/CNY (ドル元)"},
+    {"C": "💱 Forex", "T": "USDJPY=X", "N": "USD/JPY (ドル円)"},
+    {"C": "💱 Forex", "T": "EURJPY=X", "N": "EUR/JPY (ユーロ円)"},
+    {"C": "💱 Forex", "T": "EURUSD=X", "N": "EUR/USD (ユーロドル)"},
+    {"C": "💱 Forex", "T": "GBPUSD=X", "N": "GBP/USD (ポンドドル)"},
+    {"C": "💱 Forex", "T": "DX-Y.NYB", "N": "Dollar Index (ドル指数)"},
 ]
 
 US_TECH = [
     {"C": "🇺🇸 US Tech", "T": "AAPL", "N": "Apple"}, {"C": "🇺🇸 US Tech", "T": "MSFT", "N": "Microsoft"},
     {"C": "🇺🇸 US Tech", "T": "NVDA", "N": "NVIDIA"}, {"C": "🇺🇸 US Tech", "T": "GOOGL", "N": "Alphabet"},
     {"C": "🇺🇸 US Tech", "T": "AMZN", "N": "Amazon"}, {"C": "🇺🇸 US Tech", "T": "META", "N": "Meta"},
-    {"C": "🇺🇸 US Tech", "T": "TSLA", "N": "Tesla"}, {"C": "🇺🇸 US Tech", "T": "AVGO", "N": "Broadcom"},
-    {"C": "🇺🇸 US Tech", "T": "AMD", "N": "AMD"}, {"C": "🇺🇸 US Tech", "T": "NFLX", "N": "Netflix"},
-    {"C": "🇺🇸 US Tech", "T": "PLTR", "N": "Palantir"}, {"C": "🇺🇸 US Tech", "T": "COIN", "N": "Coinbase"}
+    {"C": "🇺🇸 US Tech", "T": "TSLA", "N": "Tesla"}, {"C": "🇺🇸 US Tech", "T": "AMD", "N": "AMD"},
+    {"C": "🇺🇸 US Tech", "T": "NFLX", "N": "Netflix"}, {"C": "🇺🇸 US Tech", "T": "PLTR", "N": "Palantir"}
 ]
 US_MAJOR = [
     {"C": "🇺🇸 US Major", "T": "JPM", "N": "JPMorgan"}, {"C": "🇺🇸 US Major", "T": "V", "N": "Visa"},
     {"C": "🇺🇸 US Major", "T": "LLY", "N": "Eli Lilly"}, {"C": "🇺🇸 US Major", "T": "XOM", "N": "Exxon Mobil"},
     {"C": "🇺🇸 US Major", "T": "KO", "N": "Coca-Cola"}, {"C": "🇺🇸 US Major", "T": "MCD", "N": "McDonald's"},
-    {"C": "🇺🇸 US Major", "T": "DIS", "N": "Disney"}, {"C": "🇺🇸 US Major", "T": "NKE", "N": "Nike"},
-    {"C": "🇺🇸 US Major", "T": "COST", "N": "Costco"}, {"C": "🇺🇸 US Major", "T": "BRK-B", "N": "Berkshire Hathaway"}
+    {"C": "🇺🇸 US Major", "T": "DIS", "N": "Disney"}, {"C": "🇺🇸 US Major", "T": "COST", "N": "Costco"}
 ]
 JAPAN = [
     {"C": "🇯🇵 Japan", "T": "7203.T", "N": "トヨタ自動車"}, {"C": "🇯🇵 Japan", "T": "6758.T", "N": "ソニーG"},
     {"C": "🇯🇵 Japan", "T": "8306.T", "N": "三菱UFJ"}, {"C": "🇯🇵 Japan", "T": "9984.T", "N": "ソフトバンクG"},
     {"C": "🇯🇵 Japan", "T": "9432.T", "N": "NTT"}, {"C": "🇯🇵 Japan", "T": "8035.T", "N": "東京エレクトロン"},
     {"C": "🇯🇵 Japan", "T": "6861.T", "N": "キーエンス"}, {"C": "🇯🇵 Japan", "T": "9983.T", "N": "ファーストリテイリング"},
-    {"C": "🇯🇵 Japan", "T": "7974.T", "N": "任天堂"}, {"C": "🇯🇵 Japan", "T": "8001.T", "N": "伊藤忠商事"},
-    {"C": "🇯🇵 Japan", "T": "7011.T", "N": "三菱重工"}, {"C": "🇯🇵 Japan", "T": "6501.T", "N": "日立製作所"}
+    {"C": "🇯🇵 Japan", "T": "7974.T", "N": "任天堂"}, {"C": "🇯🇵 Japan", "T": "8001.T", "N": "伊藤忠商事"}
 ]
 ETF = [
     {"C": "📊 ETF/Index", "T": "^GSPC", "N": "S&P 500"}, {"C": "📊 ETF/Index", "T": "^DJI", "N": "Dow 30"},
@@ -63,16 +68,15 @@ ETF = [
     {"C": "📊 ETF/Index", "T": "VOO", "N": "Vanguard S&P 500"}, {"C": "📊 ETF/Index", "T": "QQQ", "N": "Nasdaq-100"},
     {"C": "📊 ETF/Index", "T": "VT", "N": "Total World"}, {"C": "📊 ETF/Index", "T": "VYM", "N": "High Dividend"},
     {"C": "📊 ETF/Index", "T": "SPYD", "N": "High Div (SP500)"}, {"C": "📊 ETF/Index", "T": "GLD", "N": "Gold"},
-    {"C": "📊 ETF/Index", "T": "EPI", "N": "India (Earnings)"}, {"C": "📊 ETF/Index", "T": "AGG", "N": "US Bond"}
+    {"C": "📊 ETF/Index", "T": "EPI", "N": "India (Earnings)"}
 ]
 CRYPTO = [
     {"C": "🪙 Crypto", "T": "BTC-USD", "N": "Bitcoin"}, {"C": "🪙 Crypto", "T": "ETH-USD", "N": "Ethereum"},
-    {"C": "🪙 Crypto", "T": "SOL-USD", "N": "Solana"}, {"C": "🪙 Crypto", "T": "XRP-USD", "N": "XRP"},
-    {"C": "🪙 Crypto", "T": "DOGE-USD", "N": "Dogecoin"}, {"C": "🪙 Crypto", "T": "BNB-USD", "N": "BNB"}
+    {"C": "🪙 Crypto", "T": "SOL-USD", "N": "Solana"}, {"C": "🪙 Crypto", "T": "XRP-USD", "N": "XRP"}
 ]
 
-# リスト結合 (FOREXを先頭にして見つけやすくしました)
-TICKER_DATA_RAW = FOREX + US_TECH + US_MAJOR + JAPAN + ETF + CRYPTO
+# リスト結合 (BONDSを追加)
+TICKER_DATA_RAW = BONDS + FOREX + US_TECH + US_MAJOR + JAPAN + ETF + CRYPTO
 ticker_df_master = pd.DataFrame(TICKER_DATA_RAW).rename(columns={"C": "Category", "T": "Ticker", "N": "Name"})
 
 # --- 3. 期間設定 ---
@@ -122,17 +126,60 @@ def get_stock_data(ticker, period_key):
         return None, None
 
 @st.cache_data(ttl=600)
-def get_watchlist_news(tickers):
+def get_massive_news(tickers):
+    """
+    日本語100件、英語100件、合計最大200件のニュースを取得。
+    複数銘柄の場合は 'OR' 条件で検索（いずれかの銘柄を含む記事）
+    """
     if not tickers: return []
+    
     try:
+        # API制限回避のため、検索クエリに含める銘柄数を制限（最大20個程度）
+        # 20個以上選択されていても、上位20個で検索を作成
         limit = 20
         query_list = tickers[:limit]
+        
+        # "AAPL OR MSFT OR ..." の形にする (OR検索 = いずれかを含む)
         query_string = " OR ".join(query_list)
-        all_articles = newsapi.get_everything(
-            q=query_string, language='en', sort_by='publishedAt', page_size=15
+        
+        # 1. 英語ニュース (最大100件)
+        en_articles = []
+        try:
+            en_res = newsapi.get_everything(
+                q=query_string,
+                language='en',
+                sort_by='publishedAt',
+                page_size=100  # 最大100
+            )
+            en_articles = en_res.get('articles', [])
+        except:
+            pass
+            
+        # 2. 日本語ニュース (最大100件)
+        jp_articles = []
+        try:
+            jp_res = newsapi.get_everything(
+                q=query_string,
+                language='jp',
+                sort_by='publishedAt',
+                page_size=100  # 最大100
+            )
+            jp_articles = jp_res.get('articles', [])
+        except:
+            pass
+            
+        # 3. 結合して日付順にソート
+        all_articles = en_articles + jp_articles
+        # publishedAtキーがあるものだけ対象
+        all_articles = sorted(
+            [a for a in all_articles if a.get('publishedAt')], 
+            key=lambda x: x['publishedAt'], 
+            reverse=True
         )
-        return all_articles.get('articles', [])
-    except:
+        
+        return all_articles
+        
+    except Exception as e:
         return []
 
 def fetch_watchlist():
@@ -157,7 +204,7 @@ def delete_from_watchlist(item_id):
 
 # --- 5. アプリ画面構築 ---
 
-st.title("📈 Pro Investor Dashboard v7 (Forex Edition)")
+st.title("📈 Pro Investor Dashboard v8 (Ultimate)")
 
 if 'selected_tickers' not in st.session_state:
     st.session_state.selected_tickers = ["AAPL"]
@@ -165,15 +212,16 @@ if 'selected_tickers' not in st.session_state:
 w_df = fetch_watchlist()
 
 # ==========================================
-# サイドバー (管理パネル)
+# サイドバー
 # ==========================================
 st.sidebar.header("🕹️ 管理パネル")
 
+# 追加
 with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
-    st.caption("為替も追加可能 (例: USDJPY=X)")
+    st.caption("債券も追加可 (例: ^TNX, TLT)")
     with st.form("sb_add"):
-        t_in = st.text_input("コード (例: 7203.T, USDJPY=X)").upper().strip()
-        n_in = st.text_input("メモ (例: トヨタ, ドル円)")
+        t_in = st.text_input("コード (例: ^TNX, 7203.T)").upper().strip()
+        n_in = st.text_input("メモ (例: 米10年債, トヨタ)")
         if st.form_submit_button("追加"):
             if t_in:
                 add_to_watchlist(t_in, n_in)
@@ -182,6 +230,7 @@ with st.sidebar.expander("➕ 新規追加 (任意コード)", expanded=False):
             else:
                 st.warning("コードを入力してください")
 
+# 削除
 with st.sidebar.expander("🗑️ 登録銘柄の削除", expanded=False):
     if not w_df.empty:
         w_df['del_label'] = w_df['ticker'] + " - " + w_df['note'].fillna("")
@@ -202,7 +251,7 @@ st.sidebar.markdown("---")
 period_label = st.sidebar.selectbox("期間設定", list(PERIOD_OPTIONS.keys()), index=5)
 st.sidebar.markdown("---")
 
-# 分析対象選択 (pills)
+# Pills選択
 st.sidebar.subheader("📊 分析・比較する銘柄")
 available_options = []
 default_sel = []
@@ -233,7 +282,7 @@ if not w_df.empty:
     st.session_state.selected_tickers = current_tickers
 
 else:
-    st.sidebar.info("ウォッチリストが空です。上のメニューから追加してください。")
+    st.sidebar.info("ウォッチリストが空です。")
     current_tickers = []
 
 
@@ -241,12 +290,12 @@ else:
 # メインコンテンツ
 # ==========================================
 
-tab_chart, tab_news, tab_db = st.tabs(["📊 チャート分析", "📰 関連ニュース", "📋 銘柄DB"])
+tab_chart, tab_news, tab_db = st.tabs(["📊 チャート分析", "📰 関連ニュース (Max 200)", "📋 銘柄DB"])
 
 # --- タブ1: チャート ---
 with tab_chart:
     if not current_tickers:
-        st.info("👈 左のボタンで銘柄を選んでください。株と為替を同時に選ぶと比較できます。")
+        st.info("👈 左のボタンで銘柄を選んでください。")
     
     elif len(current_tickers) == 1:
         # 単体モード
@@ -255,7 +304,8 @@ with tab_chart:
             df, info = get_stock_data(ticker, period_label)
         
         if df is not None and not df.empty:
-            st.subheader(f"{info.get('shortName', ticker)} ({ticker})")
+            short_name = info.get('shortName', ticker) if info else ticker
+            st.subheader(f"{short_name} ({ticker})")
             
             latest = df.iloc[-1]
             prev = df.iloc[-2] if len(df) > 1 else latest
@@ -268,7 +318,8 @@ with tab_chart:
             c3.metric("High", f"${df['High'].max():,.2f}")
             
             fig = go.Figure()
-            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"))
+            # 債券利回りの場合は「株価」ではないので表記に注意（コード上はPriceとして処理）
+            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price/Yield"))
             if 'SMA20' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'))
             if 'SMA50' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color='blue', width=1), name='SMA 50'))
             fig.update_layout(height=500, xaxis_rangeslider_visible=False)
@@ -290,12 +341,12 @@ with tab_chart:
                     fig_r.update_layout(height=300, title="RSI", yaxis=dict(range=[0, 100]))
                     st.plotly_chart(fig_r, use_container_width=True)
         else:
-            st.error("データ取得エラー。コードが正しいか確認してください。")
+            st.error("データ取得エラー。")
 
     else:
-        # 比較モード (株 vs 為替など)
+        # 比較モード
         st.subheader("📊 パフォーマンス比較 (正規化)")
-        st.caption("※ 開始時点を 0% として、株価や為替レートの変化率を比較します")
+        st.caption("※ 開始時点を 0% として変化率を表示。債券利回り、為替、株価を同時に比較できます。")
         fig_comp = go.Figure()
         
         for t in current_tickers:
@@ -310,13 +361,18 @@ with tab_chart:
         fig_comp.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.3)
         st.plotly_chart(fig_comp, use_container_width=True)
 
-# --- タブ2: ニュース ---
+# --- タブ2: ニュース (大量取得版) ---
 with tab_news:
-    st.header("📰 関連ニュース")
+    st.header("📰 関連ニュース (日/英・OR検索)")
     if current_tickers:
-        with st.spinner("ニュース検索中..."):
-            arts = get_watchlist_news(current_tickers)
+        st.caption(f"検索対象: {', '.join(current_tickers)}")
+        st.info("💡 選択された銘柄の「いずれか」に関連する記事を、日本語・英語合わせて最大200件取得します。")
+        
+        with st.spinner("大量のニュースを収集中... 少し時間がかかります"):
+            arts = get_massive_news(current_tickers)
+        
         if arts:
+            st.success(f"{len(arts)} 件の記事が見つかりました")
             for a in arts:
                 with st.container(border=True):
                     c_img, c_txt = st.columns([1, 3])
@@ -333,7 +389,7 @@ with tab_news:
 with tab_db:
     st.header("📋 銘柄データベース")
     st.info("コードをコピーして、サイドバーの「新規追加」へ貼り付けてください。")
-    search_q = st.text_input("検索", placeholder="例: USD, 7203...")
+    search_q = st.text_input("検索", placeholder="例: Yield, Bond, トヨタ...")
     
     df_db = ticker_df_master
     if search_q:
