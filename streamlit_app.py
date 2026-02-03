@@ -1,147 +1,159 @@
 import streamlit as st
-import google.generativeai as genai
+import pandas as pd
+import yfinance as yf
+import plotly.graph_objects as go
 from supabase import create_client, Client
-import json
-import time
-from PIL import Image
-import PyPDF2
+import datetime
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Smart Lecture Mate", layout="wide")
+st.set_page_config(page_title="Market Dashboard", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    st.error("Secrets (APIキーなど) が設定されていません。")
+    st.error("Secrets (SupabaseのURLとKEY) が設定されていません。")
     st.stop()
 
-# 初期化
+# Supabaseクライアント
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-genai.configure(api_key=GEMINI_API_KEY)
 
 # --- 2. 関数群 ---
-def extract_text_from_pdf(uploaded_file):
-    try:
-        pdf_reader = PyPDF2.PdfReader(uploaded_file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
-        return text
-    except:
-        return None
 
-def analyze_content(text_input, image_input=None):
-    # ★修正：より軽量な「Lite」モデルに変更して、混雑を回避
-    target_model = 'gemini-2.0-flash-lite'
-    
-    base_prompt = """
-    あなたは大学の優秀なチューターです。講義資料をもとに、学習用「要約」と「4択クイズ」を作成してください。
-    【重要】必ず以下のJSONフォーマットのみを出力してください。Markdown記法は不要です。
-    {
-        "summary": "要約文",
-        "quiz": [
-            {"question": "問題", "options": ["A","B","C","D"], "answer_index": 0, "explanation": "解説"}
-        ]
-    }
-    """
+# (A) 株価データ取得 (キャッシュして高速化)
+@st.cache_data(ttl=300) # 5分間データを保存
+def get_stock_data(ticker, period="1y", interval="1d"):
     try:
-        model = genai.GenerativeModel(target_model)
-        
-        content = [base_prompt]
-        if image_input:
-            content.append("以下の講義ノート画像を解析してください：")
-            content.append(image_input)
-        if text_input:
-            content.append(f"補足テキスト: {text_input}")
-
-        response = model.generate_content(content)
-        clean_text = response.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(clean_text)
-    
+        stock = yf.Ticker(ticker)
+        # 履歴データの取得
+        df = stock.history(period=period, interval=interval)
+        return df, stock.info
     except Exception as e:
-        # エラー時のメッセージ
-        return {"error": f"AI生成エラー: {e}"}
+        return None, None
 
-# --- 3. データベース保存 ---
-def save_smart_note(subject, topic, json_data):
-    data = {"subject": subject, "topic": topic, "content_json": json_data}
-    supabase.table("smart_notes").insert(data).execute()
+# (B) ウォッチリスト操作
+def fetch_watchlist():
+    response = supabase.table("watchlist").select("*").order("created_at", desc=True).execute()
+    return pd.DataFrame(response.data)
 
-def fetch_smart_notes():
-    return supabase.table("smart_notes").select("*").order("created_at", desc=True).execute().data
+def add_to_watchlist(ticker, note):
+    # 重複チェックは簡易的に省略（同じ銘柄も登録可とする）
+    data = {"ticker": ticker, "note": note}
+    supabase.table("watchlist").insert(data).execute()
 
-def delete_smart_note(note_id):
-    supabase.table("smart_notes").delete().eq("id", note_id).execute()
+def delete_from_watchlist(item_id):
+    supabase.table("watchlist").delete().eq("id", item_id).execute()
 
-# --- 4. アプリ画面 ---
-st.title("🎓 Smart Lecture Mate")
-st.caption(f"Powered by Gemini 2.0 Flash Lite")
+# --- 3. アプリ画面 ---
 
-tab1, tab2 = st.tabs(["📝 作成", "📚 復習"])
+st.title("📈 Market Data Analyst")
+st.caption("Powered by Yahoo Finance & Supabase")
 
-with tab1:
-    st.header("資料からノート作成")
-    with st.container(border=True):
-        c1, c2 = st.columns(2)
-        subject_in = c1.text_input("科目名")
-        topic_in = c2.text_input("テーマ")
+# === サイドバー：ウォッチリスト管理 ===
+st.sidebar.header("⭐ ウォッチリスト")
+
+# 新規追加フォーム
+with st.sidebar.expander("＋ 銘柄を追加"):
+    with st.form("add_form", clear_on_submit=True):
+        new_ticker = st.text_input("銘柄コード (例: AAPL, BTC-USD)").upper()
+        new_note = st.text_input("メモ (例: Apple, ビットコイン)")
+        if st.form_submit_button("追加"):
+            if new_ticker:
+                add_to_watchlist(new_ticker, new_note)
+                st.success("追加しました")
+                st.rerun()
+
+# リスト表示 & 選択
+watchlist_df = fetch_watchlist()
+selected_ticker = "AAPL" # デフォルト
+
+if not watchlist_df.empty:
+    st.sidebar.markdown("---")
+    # ラジオボタンで銘柄を選択させる
+    # 表示名を作成: "AAPL (Apple)" のように見やすくする
+    watchlist_df['label'] = watchlist_df['ticker'] + " - " + watchlist_df['note'].fillna("")
+    
+    # 選択ウィジェット
+    selection = st.sidebar.radio("分析する銘柄を選択:", watchlist_df['label'])
+    
+    # 選択された行のデータを取得
+    selected_row = watchlist_df[watchlist_df['label'] == selection].iloc[0]
+    selected_ticker = selected_row['ticker']
+    
+    # 削除ボタン
+    if st.sidebar.button("この銘柄を削除", key="del_btn"):
+        delete_from_watchlist(int(selected_row['id']))
+        st.rerun()
+else:
+    st.sidebar.info("まだ登録がありません。銘柄を追加してください。")
+    # ウォッチリストが空のときは手入力欄を出す
+    selected_ticker = st.sidebar.text_input("銘柄コードを入力", "AAPL").upper()
+
+
+# === メインエリア：分析ダッシュボード ===
+
+if selected_ticker:
+    st.header(f"📊 {selected_ticker} の分析")
+    
+    # 期間選択
+    col_per, col_int = st.columns(2)
+    period = col_per.selectbox("期間", ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"], index=3)
+    interval = col_int.selectbox("足の間隔", ["1d", "1wk", "1mo"], index=0)
+    
+    # データ取得
+    with st.spinner("データを取得中..."):
+        df, info = get_stock_data(selected_ticker, period, interval)
+    
+    if df is not None and not df.empty:
+        # 最新価格の表示
+        latest = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) > 1 else latest
+        change = latest['Close'] - prev['Close']
+        pct_change = (change / prev['Close']) * 100
         
-        input_type = st.radio("入力形式", ["テキスト", "画像", "PDF"], horizontal=True)
-        user_text, user_image = "", None
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("現在値 (Close)", f"${latest['Close']:,.2f}")
+        col_m2.metric("前日比", f"{change:,.2f}", f"{pct_change:.2f}%")
+        col_m3.metric("出来高", f"{latest['Volume']:,}")
         
-        if input_type == "テキスト":
-            user_text = st.text_area("メモ入力")
-        elif input_type == "画像":
-            img = st.file_uploader("画像", type=["jpg","png"])
-            if img: user_image = Image.open(img)
-        elif input_type == "PDF":
-            pdf = st.file_uploader("PDF", type=["pdf"])
-            if pdf: user_text = extract_text_from_pdf(pdf)
-            if user_text: st.success(f"{len(user_text)}文字 読み込み成功")
-
-        if st.button("🚀 分析開始", type="primary"):
-            if subject_in:
-                with st.spinner("Gemini 2.0 Flash Lite が分析中..."):
-                    # 念のため、エラーが出た際に少し待って再トライするような処理は複雑になるため、
-                    # 今回はモデル変更で対応します。
-                    res = analyze_content(user_text, user_image)
-                    if "error" in res:
-                        st.error("AI分析に失敗しました")
-                        st.warning("ヒント: 無料枠の上限に達している可能性があります。1分ほど待ってから再試行してください。")
-                        st.text(res['error'])
-                    else:
-                        st.session_state['res'] = res
-                        st.session_state['meta'] = {"sub": subject_in, "top": topic_in}
-                        st.success("完了！")
-
-    if 'res' in st.session_state:
-        data = st.session_state['res']
-        st.info(data.get("summary"))
-        if st.button("💾 保存"):
-            save_smart_note(st.session_state['meta']['sub'], st.session_state['meta']['top'], data)
-            st.toast("保存しました")
-            del st.session_state['res']
-            st.rerun()
-
-with tab2:
-    st.header("復習モード")
-    notes = fetch_smart_notes()
-    if notes:
-        sel = st.selectbox("ノート選択", [f"{n['subject']}-{n['topic']}" for n in notes])
-        target = next(n for n in notes if f"{n['subject']}-{n['topic']}" == sel)
-        content = target['content_json']
+        # --- グラフ描画 (Plotly) ---
+        st.subheader("プライスアクション")
         
-        st.markdown(content.get("summary"))
-        for i, q in enumerate(content.get("quiz", [])):
-            st.markdown(f"**Q{i+1}. {q['question']}**")
-            ch = st.radio("選択肢", q['options'], key=f"q{target['id']}{i}", index=None)
-            if st.button(f"答え合わせ {i+1}", key=f"b{target['id']}{i}"):
-                if ch == q['options'][q['answer_index']]: st.success("正解！")
-                else: st.error("不正解")
-                st.info(q['explanation'])
+        # タブ切り替え
+        tab_chart, tab_data = st.tabs(["🕯️ チャート", "🔢 生データ"])
         
-        if st.button("削除"):
-            delete_smart_note(target['id'])
-            st.rerun()
+        with tab_chart:
+            # 移動平均線の計算（データサイエンス要素）
+            df['SMA_20'] = df['Close'].rolling(window=20).mean()
+            df['SMA_50'] = df['Close'].rolling(window=50).mean()
+            
+            # グラフ作成
+            fig = go.Figure()
+            
+            # ローソク足
+            fig.add_trace(go.Candlestick(
+                x=df.index,
+                open=df['Open'], high=df['High'],
+                low=df['Low'], close=df['Close'],
+                name='Price'
+            ))
+            
+            # 移動平均線 (オプション)
+            show_sma = st.checkbox("移動平均線を表示 (20日/50日)", value=True)
+            if show_sma:
+                fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], mode='lines', name='SMA 20', line=dict(color='orange', width=1)))
+                fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], mode='lines', name='SMA 50', line=dict(color='blue', width=1)))
+
+            fig.update_layout(
+                title=f"{selected_ticker} 株価推移",
+                yaxis_title="株価 (USD)",
+                xaxis_rangeslider_visible=False, # スライダーを消してすっきりさせる
+                height=500
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+        with tab_data:
+            st.dataframe(df.sort_index(ascending=False), use_container_width=True)
+            
+    else:
+        st.error(f"データが見つかりませんでした。銘柄コード '{selected_ticker}' が正しいか確認してください。")
