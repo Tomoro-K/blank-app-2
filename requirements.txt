@@ -1,5 +1,5 @@
 streamlit
 supabase
-google-generativeai>=0.7.2
-Pillow
-PyPDF2
+yfinance
+plotly
+pandas
