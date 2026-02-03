@@ -20,25 +20,79 @@ except:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
-# --- 2. 銘柄データ (プリセット) ---
+# --- 2. 銘柄データ (大幅増量版) ---
 TICKER_DATA = [
-    {"Category": "US Tech", "Ticker": "AAPL", "Name": "Apple"},
-    {"Category": "US Tech", "Ticker": "NVDA", "Name": "NVIDIA"},
-    {"Category": "US Tech", "Ticker": "MSFT", "Name": "Microsoft"},
-    {"Category": "US Tech", "Ticker": "AMZN", "Name": "Amazon"},
-    {"Category": "US Tech", "Ticker": "TSLA", "Name": "Tesla"},
-    {"Category": "US Tech", "Ticker": "GOOGL", "Name": "Google"},
-    {"Category": "Index", "Ticker": "^GSPC", "Name": "S&P 500"},
-    {"Category": "Crypto", "Ticker": "BTC-USD", "Name": "Bitcoin"},
-    {"Category": "Crypto", "Ticker": "ETH-USD", "Name": "Ethereum"},
-    {"Category": "Japan", "Ticker": "7203.T", "Name": "Toyota"},
-    {"Category": "Japan", "Ticker": "6758.T", "Name": "Sony"},
+    # 米国株 - ハイテク/マグニフィセント7
+    {"Category": "🇺🇸 US Tech (M7)", "Ticker": "AAPL", "Name": "Apple"},
+    {"Category": "🇺🇸 US Tech (M7)", "Ticker": "NVDA", "Name": "NVIDIA"},
+    {"Category": "🇺🇸 US Tech (M7)", "Ticker": "MSFT", "Name": "Microsoft"},
+    {"Category": "🇺🇸 US Tech (M7)", "Ticker": "AMZN", "Name": "Amazon"},
+    {"Category": "🇺🇸 US Tech (M7)", "Ticker": "GOOGL", "Name": "Alphabet (Google)"},
+    {"Category": "🇺🇸 US Tech (M7)", "Ticker": "META", "Name": "Meta Platforms"},
+    {"Category": "🇺🇸 US Tech (M7)", "Ticker": "TSLA", "Name": "Tesla"},
+    
+    # 米国株 - 有名企業
+    {"Category": "🇺🇸 US Major", "Ticker": "NFLX", "Name": "Netflix"},
+    {"Category": "🇺🇸 US Major", "Ticker": "AMD", "Name": "AMD"},
+    {"Category": "🇺🇸 US Major", "Ticker": "INTC", "Name": "Intel"},
+    {"Category": "🇺🇸 US Major", "Ticker": "CRM", "Name": "Salesforce"},
+    {"Category": "🇺🇸 US Major", "Ticker": "KO", "Name": "Coca-Cola"},
+    {"Category": "🇺🇸 US Major", "Ticker": "PEP", "Name": "PepsiCo"},
+    {"Category": "🇺🇸 US Major", "Ticker": "MCD", "Name": "McDonald's"},
+    {"Category": "🇺🇸 US Major", "Ticker": "DIS", "Name": "Disney"},
+    {"Category": "🇺🇸 US Major", "Ticker": "NKE", "Name": "Nike"},
+    {"Category": "🇺🇸 US Major", "Ticker": "JPM", "Name": "JPMorgan Chase"},
+    {"Category": "🇺🇸 US Major", "Ticker": "V", "Name": "Visa"},
+    {"Category": "🇺🇸 US Major", "Ticker": "PG", "Name": "Procter & Gamble"},
+    {"Category": "🇺🇸 US Major", "Ticker": "JNJ", "Name": "Johnson & Johnson"},
+    {"Category": "🇺🇸 US Major", "Ticker": "XOM", "Name": "Exxon Mobil"},
+
+    # ETF (指数・高配当)
+    {"Category": "📊 ETF/Index", "Ticker": "^GSPC", "Name": "S&P 500 Index"},
+    {"Category": "📊 ETF/Index", "Ticker": "^DJI", "Name": "Dow Jones 30"},
+    {"Category": "📊 ETF/Index", "Ticker": "^IXIC", "Name": "NASDAQ Composite"},
+    {"Category": "📊 ETF/Index", "Ticker": "VOO", "Name": "Vanguard S&P 500"},
+    {"Category": "📊 ETF/Index", "Ticker": "QQQ", "Name": "Invesco QQQ (Nasdaq-100)"},
+    {"Category": "📊 ETF/Index", "Ticker": "VTI", "Name": "Total Stock Market"},
+    {"Category": "📊 ETF/Index", "Ticker": "VT", "Name": "Total World Stock"},
+    {"Category": "📊 ETF/Index", "Ticker": "VYM", "Name": "High Dividend Yield"},
+    {"Category": "📊 ETF/Index", "Ticker": "SPYD", "Name": "S&P 500 High Dividend"},
+    {"Category": "📊 ETF/Index", "Ticker": "AGG", "Name": "US Aggregate Bond"},
+    {"Category": "📊 ETF/Index", "Ticker": "GLD", "Name": "Gold"},
+    {"Category": "📊 ETF/Index", "Ticker": "EPI", "Name": "India Earnings (インド株)"},
+
+    # 日本株 (時価総額上位・人気)
+    {"Category": "🇯🇵 Japan", "Ticker": "7203.T", "Name": "トヨタ自動車"},
+    {"Category": "🇯🇵 Japan", "Ticker": "6758.T", "Name": "ソニーグループ"},
+    {"Category": "🇯🇵 Japan", "Ticker": "8306.T", "Name": "三菱UFJ"},
+    {"Category": "🇯🇵 Japan", "Ticker": "9984.T", "Name": "ソフトバンクG"},
+    {"Category": "🇯🇵 Japan", "Ticker": "9432.T", "Name": "NTT"},
+    {"Category": "🇯🇵 Japan", "Ticker": "7974.T", "Name": "任天堂"},
+    {"Category": "🇯🇵 Japan", "Ticker": "6861.T", "Name": "キーエンス"},
+    {"Category": "🇯🇵 Japan", "Ticker": "6098.T", "Name": "リクルート"},
+    {"Category": "🇯🇵 Japan", "Ticker": "9983.T", "Name": "ファーストリテイリング"},
+    {"Category": "🇯🇵 Japan", "Ticker": "4063.T", "Name": "信越化学"},
+    {"Category": "🇯🇵 Japan", "Ticker": "8001.T", "Name": "伊藤忠商事"},
+    {"Category": "🇯🇵 Japan", "Ticker": "8035.T", "Name": "東京エレクトロン"},
+    {"Category": "🇯🇵 Japan", "Ticker": "7011.T", "Name": "三菱重工"},
+    {"Category": "🇯🇵 Japan", "Ticker": "2914.T", "Name": "JT (日本たばこ)"},
+
+    # 暗号資産
+    {"Category": "🪙 Crypto", "Ticker": "BTC-USD", "Name": "Bitcoin"},
+    {"Category": "🪙 Crypto", "Ticker": "ETH-USD", "Name": "Ethereum"},
+    {"Category": "🪙 Crypto", "Ticker": "XRP-USD", "Name": "XRP"},
+    {"Category": "🪙 Crypto", "Ticker": "SOL-USD", "Name": "Solana"},
+    {"Category": "🪙 Crypto", "Ticker": "BNB-USD", "Name": "BNB"},
+    {"Category": "🪙 Crypto", "Ticker": "DOGE-USD", "Name": "Dogecoin"},
 ]
 
 # --- 3. 関数群 ---
 
-# (A) テクニカル指標の計算
 def calculate_technicals(df):
+    # SMA (KeyError対策で先に計算)
+    df['SMA20'] = df['Close'].rolling(window=20).mean()
+    df['SMA50'] = df['Close'].rolling(window=50).mean()
+    
     # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -52,13 +106,8 @@ def calculate_technicals(df):
     df['MACD'] = ema12 - ema26
     df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     
-    # ★修正ポイント1: ここでSMA（移動平均）も計算しておくことでKeyErrorを防ぐ
-    df['SMA20'] = df['Close'].rolling(window=20).mean()
-    df['SMA50'] = df['Close'].rolling(window=50).mean()
-    
     return df
 
-# (B) 株価データ取得
 @st.cache_data(ttl=300)
 def get_stock_data(ticker, period="1y", interval="1d"):
     if not ticker: return None, None
@@ -71,23 +120,15 @@ def get_stock_data(ticker, period="1y", interval="1d"):
     except:
         return None, None
 
-# (C) ニュース取得
 @st.cache_data(ttl=600)
 def get_market_news(query):
-    if not query: return []
+    if not query or len(query) < 2: return []
     try:
-        if len(query) < 2: return [] # 短すぎるクエリはスキップ
-        all_articles = newsapi.get_everything(
-            q=query,
-            language='en',
-            sort_by='publishedAt',
-            page_size=10
-        )
+        all_articles = newsapi.get_everything(q=query, language='en', sort_by='publishedAt', page_size=8)
         return all_articles.get('articles', [])
-    except Exception:
+    except:
         return []
 
-# (D) ウォッチリスト操作
 def fetch_watchlist():
     try:
         return pd.DataFrame(supabase.table("watchlist").select("*").order("created_at", desc=True).execute().data)
@@ -95,158 +136,197 @@ def fetch_watchlist():
         return pd.DataFrame()
 
 def add_to_watchlist(ticker, note):
-    supabase.table("watchlist").insert({"ticker": ticker, "note": note}).execute()
+    try:
+        # 重複チェックは簡易的に省略
+        supabase.table("watchlist").insert({"ticker": ticker, "note": note}).execute()
+        return True
+    except:
+        return False
 
 def delete_from_watchlist(item_id):
-    supabase.table("watchlist").delete().eq("id", item_id).execute()
+    try:
+        supabase.table("watchlist").delete().eq("id", item_id).execute()
+    except:
+        pass
 
 # --- 4. アプリ画面構築 ---
 
 st.title("📈 Pro Investor Dashboard")
 
-# タブ構成
-tab_chart, tab_news, tab_list = st.tabs(["📊 分析・チャート", "📰 関連ニュース", "📋 銘柄リスト"])
+# セッション状態の管理（選択中の銘柄を保持）
+if 'current_ticker' not in st.session_state:
+    st.session_state.current_ticker = "AAPL"
 
-# サイドバー設定
+# ==========================================
+# サイドバー (設定 & ウォッチリスト連携)
+# ==========================================
 st.sidebar.header("設定パネル")
+
+# ウォッチリスト表示
 with st.sidebar.expander("⭐ ウォッチリスト", expanded=True):
     w_df = fetch_watchlist()
     if not w_df.empty:
-        # 銘柄選択ロジック
-        w_options = w_df['ticker'] + " - " + w_df['note'].fillna("")
-        w_sel = st.radio("保存済み銘柄", w_options)
+        # 表示用ラベル作成
+        w_df['label'] = w_df['ticker'] + " - " + w_df['note'].fillna("")
         
-        # 選択された行を安全に取得
-        row = w_df[w_options == w_sel]
-        if not row.empty:
-            sel_ticker = row.iloc[0]['ticker']
-            sel_id = row.iloc[0]['id']
+        # ラジオボタンで選択 (keyを指定して状態管理)
+        selected_label = st.radio(
+            "銘柄を選択:", 
+            w_df['label'], 
+            index=0,
+            key="watchlist_radio"
+        )
+        
+        # 選択されたらメインのtickerを更新するロジック
+        # (ラジオボタンの変更を検知して更新)
+        selected_row = w_df[w_df['label'] == selected_label].iloc[0]
+        
+        # ボタンで削除
+        if st.button("選択中の銘柄を削除", key="del_btn"):
+            delete_from_watchlist(int(selected_row['id']))
+            st.rerun() # 即座に反映
             
-            if st.button("削除", key="del"):
-                delete_from_watchlist(int(sel_id))
-                st.rerun()
-        else:
-            sel_ticker = "AAPL"
+        # ★ここが重要: リスト選択をチャートに反映させるためのボタン
+        # ラジオボタンだけでは変数が同期しないことがあるため、明示的なボタンか、
+        # あるいは「ラジオボタンの値が変わったら代入」する
+        if st.sidebar.button("この銘柄を分析する ▶", type="primary"):
+             st.session_state.current_ticker = selected_row['ticker']
+             st.rerun()
     else:
-        sel_ticker = "AAPL"
+        st.info("リストは空です")
 
-ticker_input = st.sidebar.text_input("コード直接入力", value=sel_ticker).upper().strip()
+st.sidebar.markdown("---")
+st.sidebar.caption("コード手動入力")
+# 入力欄のデフォルト値をセッションから取得
+ticker_input = st.sidebar.text_input("Ticker", value=st.session_state.current_ticker).upper().strip()
+# 入力されたらセッションも更新
+if ticker_input != st.session_state.current_ticker:
+    st.session_state.current_ticker = ticker_input
+
 period = st.sidebar.selectbox("期間", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
 
-# データ取得
-df, info = get_stock_data(ticker_input, period=period)
+# ==========================================
+# メインコンテンツ
+# ==========================================
 
-# ==========================================
-# タブ1：チャート分析
-# ==========================================
+# データ取得
+with st.spinner(f"{ticker_input} のデータを取得中..."):
+    df, info = get_stock_data(ticker_input, period=period)
+
+tab_chart, tab_news, tab_list = st.tabs(["📊 チャート分析", "📰 関連ニュース", "📋 銘柄リスト (検索・追加)"])
+
+# --- タブ1: チャート ---
 with tab_chart:
     if df is not None and not df.empty:
-        # 会社名の取得（安全策）
         short_name = info.get('shortName', ticker_input) if info else ticker_input
         st.subheader(f"{short_name} ({ticker_input})")
         
+        # 指標
+        latest = df.iloc[-1]
+        prev = df.iloc[-2]
+        delta = latest['Close'] - prev['Close']
+        pct = (delta / prev['Close']) * 100
+        
         m1, m2, m3, m4 = st.columns(4)
-        curr_price = df['Close'].iloc[-1]
-        prev_price = df['Close'].iloc[-2]
-        delta = curr_price - prev_price
-        
-        m1.metric("現在値", f"${curr_price:,.2f}", f"{delta:,.2f}")
-        m2.metric("時価総額", f"${info.get('marketCap', 0)/1e9:,.1f} B" if info and info.get('marketCap') else "-")
-        m3.metric("PER", f"{info.get('trailingPE', 0):.2f}" if info and info.get('trailingPE') else "-")
-        m4.metric("配当", f"{info.get('dividendYield', 0)*100:.2f}%" if info and info.get('dividendYield') else "-")
-        
-        # --- メインチャート ---
+        m1.metric("現在値", f"${latest['Close']:,.2f}", f"{delta:,.2f} ({pct:.2f}%)")
+        m2.metric("時価総額", f"${info.get('marketCap', 0)/1e9:,.1f} B" if info else "-")
+        m3.metric("PER", f"{info.get('trailingPE', 0):.2f}" if info else "-")
+        m4.metric("高値(期間内)", f"${df['High'].max():,.2f}")
+
+        # チャート
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'))
-        
-        # ★修正ポイント: ここでSMA20/50を使うが、calculate_technicals関数で計算済みなのでエラーにならない
         if 'SMA20' in df.columns:
-            fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], mode='lines', name='SMA 20', line=dict(color='orange', width=1)))
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'))
         if 'SMA50' in df.columns:
-            fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], mode='lines', name='SMA 50', line=dict(color='blue', width=1)))
-        
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color='blue', width=1), name='SMA 50'))
         fig.update_layout(height=500, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
         
-        # --- サブチャート ---
+        # テクニカル
         c1, c2 = st.columns(2)
         with c1:
-            fig_macd = go.Figure()
+            fig_m = go.Figure()
             if 'MACD' in df.columns:
-                fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], name='MACD', line=dict(color='purple')))
-                fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal'], name='Signal', line=dict(color='orange')))
-            fig_macd.update_layout(title="MACD", height=300)
-            st.plotly_chart(fig_macd, use_container_width=True)
-        
+                fig_m.add_trace(go.Scatter(x=df.index, y=df['MACD'], name='MACD'))
+                fig_m.add_trace(go.Scatter(x=df.index, y=df['Signal'], name='Signal'))
+            fig_m.update_layout(height=300, title="MACD", margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig_m, use_container_width=True)
         with c2:
-            fig_rsi = go.Figure()
+            fig_r = go.Figure()
             if 'RSI' in df.columns:
-                fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='green')))
-            fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
-            fig_rsi.add_hline(y=30, line_dash="dash", line_color="blue")
-            fig_rsi.update_layout(title="RSI", height=300, yaxis=dict(range=[0, 100]))
-            st.plotly_chart(fig_rsi, use_container_width=True)
+                fig_r.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple')))
+            fig_r.add_hline(y=70, line_dash="dash", line_color="red")
+            fig_r.add_hline(y=30, line_dash="dash", line_color="blue")
+            fig_r.update_layout(height=300, title="RSI", margin=dict(l=20, r=20, t=40, b=20), yaxis=dict(range=[0, 100]))
+            st.plotly_chart(fig_r, use_container_width=True)
     else:
-        st.warning("データが見つかりません。銘柄コードを確認してください。")
+        st.error("データを取得できませんでした。コードを確認してください。")
 
-# ==========================================
-# タブ2：関連ニュース (IndexError対策済み)
-# ==========================================
+# --- タブ2: ニュース ---
 with tab_news:
-    st.header(f"📰 {ticker_input} 関連ニュース")
-    
-    # ★修正ポイント2: 検索ワード作成時のIndexErrorを完全に回避
-    query_words = [ticker_input]
-    
-    # infoが存在し、かつshortNameが文字列として存在する場合のみ追加
+    st.header(f"📰 {ticker_input} News")
+    # 検索クエリ生成
+    q_words = [ticker_input]
     if info and isinstance(info.get('shortName'), str):
-        name_parts = info['shortName'].split()
-        if len(name_parts) > 0:
-            query_words.append(name_parts[0]) # 最初の単語 (例: "Apple")
+        q_words.append(info['shortName'].split()[0]) # Apple Inc -> Apple
     
-    # 重複を消して " OR " でつなぐ
-    search_q = " OR ".join(list(set(query_words)))
+    search_q = " OR ".join(list(set(q_words)))
     
-    if search_q:
-        with st.spinner("ニュース検索中..."):
-            articles = get_market_news(search_q)
-            
-        if articles:
-            for art in articles:
-                with st.container(border=True):
-                    col_img, col_txt = st.columns([1, 3])
-                    with col_img:
-                        if art.get('urlToImage'):
-                            st.image(art['urlToImage'], use_container_width=True)
-                        else:
-                            st.text("No Image")
-                    with col_txt:
-                        st.subheader(art.get('title', 'No Title'))
-                        st.caption(f"{art['source']['name']} | {art['publishedAt'][:10]}")
-                        st.write(art.get('description', ''))
-                        st.markdown(f"[記事を読む]({art['url']})")
-        else:
-            st.info("関連ニュースが見つかりませんでした。")
+    with st.spinner("ニュース検索中..."):
+        arts = get_market_news(search_q)
+    
+    if arts:
+        for a in arts:
+            with st.container(border=True):
+                c_img, c_txt = st.columns([1, 3])
+                if a.get('urlToImage'): c_img.image(a['urlToImage'], use_container_width=True)
+                c_txt.subheader(a.get('title', 'No Title'))
+                c_txt.caption(f"{a['source']['name']} | {a['publishedAt'][:10]}")
+                c_txt.markdown(f"[記事を読む]({a['url']})")
     else:
-        st.warning("検索ワードが生成できませんでした。")
+        st.info("ニュースが見つかりませんでした")
 
-# ==========================================
-# タブ3：銘柄リスト
-# ==========================================
+# --- タブ3: 銘柄リスト & 追加 ---
 with tab_list:
-    st.header("銘柄コード一覧")
-    st.info("クリックしてコピー → サイドバーで「銘柄を追加」してください")
+    st.header("銘柄リスト (検索 & 追加)")
     
-    with st.expander("＋ ウォッチリストに新規登録", expanded=True):
-        with st.form("add_watch"):
-            c1, c2 = st.columns(2)
-            n_tick = c1.text_input("コード (例: NVDA)")
-            n_memo = c2.text_input("メモ (例: NVIDIA)")
-            if st.form_submit_button("登録"):
-                if n_tick:
-                    add_to_watchlist(n_tick, n_memo)
-                    st.success("登録しました！")
-                    st.rerun()
+    # 追加フォームをトップに配置
+    st.markdown("##### ➕ ウォッチリストに追加")
+    with st.container(border=True):
+        c1, c2, c3 = st.columns([2, 2, 1])
+        # session_stateを使ってフォームの値を制御するテクニックも使えるが
+        # シンプルにフォームで実装
+        with st.form("add_ticker_form", clear_on_submit=True):
+            f_ticker = c1.text_input("コード (例: VOO)")
+            f_note = c2.text_input("メモ (例: S&P500 ETF)")
+            submitted = st.form_submit_button("リストに追加", type="primary")
+            
+            if submitted:
+                if f_ticker:
+                    res = add_to_watchlist(f_ticker.upper(), f_note)
+                    if res:
+                        st.success(f"{f_ticker} を追加しました！")
+                        st.rerun() # 追加したら即再読み込みしてサイドバーに反映
+                    else:
+                        st.error("追加に失敗しました")
+                else:
+                    st.warning("コードを入力してください")
 
+    st.markdown("---")
+    
+    # 銘柄一覧表示
     t_df = pd.DataFrame(TICKER_DATA)
-    st.dataframe(t_df, use_container_width=True, hide_index=True)
+    
+    # 検索機能
+    search_w = st.text_input("🔍 リスト内を検索", placeholder="Japan, Apple, BTC...")
+    if search_w:
+        mask = t_df.astype(str).apply(lambda x: x.str.contains(search_w, case=False)).any(axis=1)
+        t_df = t_df[mask]
+
+    # カテゴリごとに表示
+    cats = t_df['Category'].unique()
+    for cat in cats:
+        st.caption(f"📌 {cat}")
+        sub_df = t_df[t_df['Category'] == cat][['Ticker', 'Name']]
+        st.dataframe(sub_df, use_container_width=True, hide_index=True)
