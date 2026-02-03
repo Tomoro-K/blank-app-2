@@ -4,4 +4,4 @@ pandas
 requests
 plotly
 yfinance
-genai
+google-generativeai
