@@ -8,7 +8,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v9.5", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v9.6", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -23,7 +23,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
 # --- 2. 銘柄データ (300種以上・完全復旧) ---
-# ※ 長くなるため、主要カテゴリを網羅したリストに戻しました
 BONDS = [
     {"C": "📉 Bonds/Yields", "T": "^TNX", "N": "US 10Y Yield (米国10年債利回り)"},
     {"C": "📉 Bonds/Yields", "T": "^FVX", "N": "US 5Y Yield (米国5年債利回り)"},
@@ -31,6 +30,7 @@ BONDS = [
     {"C": "📉 Bonds/Yields", "T": "TLT", "N": "20+ Year Treasury Bond ETF"},
     {"C": "📉 Bonds/Yields", "T": "LQD", "N": "Inv Grade Corp Bond ETF (社債)"},
     {"C": "📉 Bonds/Yields", "T": "HYG", "N": "High Yield Corp Bond ETF (ハイイールド債)"},
+    {"C": "📉 Bonds/Yields", "T": "JNK", "N": "High Yield Bond ETF (ジャンク債)"},
     {"C": "📉 Bonds/Yields", "T": "AGG", "N": "US Aggregate Bond ETF (総合債券)"},
     {"C": "📉 Bonds/Yields", "T": "BND", "N": "Total Bond Market ETF"}
 ]
@@ -44,6 +44,7 @@ FOREX = [
     {"C": "💱 Forex", "T": "AUDUSD=X", "N": "AUD/USD (豪ドル米ドル)"},
     {"C": "💱 Forex", "T": "AUDJPY=X", "N": "AUD/JPY (豪ドル円)"},
     {"C": "💱 Forex", "T": "DX-Y.NYB", "N": "Dollar Index (ドル指数)"},
+    {"C": "💱 Forex", "T": "CNY=X", "N": "USD/CNY (ドル元)"},
 ]
 
 US_TECH = [
@@ -157,7 +158,7 @@ def calculate_technicals(df):
 
 @st.cache_data(ttl=300)
 def get_stock_data(ticker, period_key):
-    # エラー対策: 複雑なstockオブジェクトを返さず、DataFrame化して返す
+    # 【重要修正】キャッシュエラーを防ぐため、オブジェクトではなくDataFrameのみを返す
     if not ticker: return None, None, None
     
     yf_period = PERIOD_OPTIONS.get(period_key, "1y")
@@ -175,19 +176,15 @@ def get_stock_data(ticker, period_key):
         
         if not df.empty:
             df = calculate_technicals(df)
-        else:
-            # データが空の場合
-            return None, None, None
-
-        # 財務データ (DataFrame化)
+        
+        # 財務データ (DataFrameとして取得)
         fin_df = pd.DataFrame()
         try:
             fin_df = stock.financials
         except:
             pass
             
-        return df, fin_df, stock.info
-        
+        return df, fin_df, stock.info # stockオブジェクト自体は返さない
     except:
         return None, None, None
 
@@ -196,7 +193,7 @@ def get_massive_news(search_queries):
     """
     【改良版】
     カッコ書きを除去し、さらに「4文字以上の単語」を抽出して検索キーワードに追加。
-    それらを OR でつないでヒット率を最大化する。
+    API制限を回避するため、キーワードは上位8個に制限する。
     """
     if not search_queries: return []
     try:
@@ -205,36 +202,42 @@ def get_massive_news(search_queries):
         for q in search_queries:
             if not q: continue
             
-            # 手順1: カッコ書きを除去してベースの言葉を作る
+            # 手順1: カッコ書きを除去
             base_text = q.replace('（', '(').split('(')[0].strip()
             if not base_text: continue
-            
-            # そのままのフレーズも検索候補に入れる
             final_keywords.append(base_text)
             
-            # 手順2: 単語に分解して、4文字以上のワードを抽出
+            # 手順2: 4文字以上のワードを抽出
             words = base_text.split()
             long_words = [w for w in words if len(w) >= 4]
             
             if long_words:
                 final_keywords.extend(long_words)
             else:
-                # 4文字以上の単語がない場合は元の単語を使う
                 final_keywords.extend(words)
 
-        # 重複を除去し、API制限考慮で上位15ワードに絞る
-        unique_keywords = list(set(final_keywords))[:15]
+        # 【重要】検索クエリが長すぎるとNewsAPIはエラーになるため、Top 8 に絞る
+        unique_keywords = list(set(final_keywords))[:8]
         
         if not unique_keywords: return []
 
-        # "US 10Y Yield OR Yield OR Bitcoin ..." の形にする
         query_string = " OR ".join(unique_keywords)
         
         # --- APIリクエスト ---
-        en_res = newsapi.get_everything(q=query_string, language='en', sort_by='publishedAt', page_size=50)
-        jp_res = newsapi.get_everything(q=query_string, language='jp', sort_by='publishedAt', page_size=50)
-        
-        all_articles = en_res.get('articles', []) + jp_res.get('articles', [])
+        # 失敗しても止まらないようにtry-except
+        try:
+            en_res = newsapi.get_everything(q=query_string, language='en', sort_by='publishedAt', page_size=50)
+            en_arts = en_res.get('articles', [])
+        except:
+            en_arts = []
+            
+        try:
+            jp_res = newsapi.get_everything(q=query_string, language='jp', sort_by='publishedAt', page_size=50)
+            jp_arts = jp_res.get('articles', [])
+        except:
+            jp_arts = []
+            
+        all_articles = en_arts + jp_arts
         all_articles = sorted([a for a in all_articles if a.get('publishedAt')], key=lambda x: x['publishedAt'], reverse=True)
         
         return all_articles
@@ -263,7 +266,7 @@ def delete_from_watchlist(item_id):
 
 # --- 5. アプリ画面構築 ---
 
-st.title("📈 Pro Investor Dashboard v9.5")
+st.title("📈 Pro Investor Dashboard v9.6")
 
 if 'selected_tickers' not in st.session_state:
     st.session_state.selected_tickers = ["AAPL"]
@@ -337,7 +340,7 @@ with tab_chart:
         with st.spinner(f"{ticker} 分析中..."):
             df, fin_df, info = get_stock_data(ticker, period_label)
         
-        if df is not None:
+        if df is not None and not df.empty:
             short_name = info.get('shortName', ticker) if info else ticker
             st.subheader(f"{short_name} ({ticker})")
             
@@ -354,12 +357,13 @@ with tab_chart:
             
             fig = go.Figure()
             fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"))
+            # 【重要修正】KeyError対策: 列が存在するかチェックしてから描画
             if 'SMA20' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'))
             if 'SMA50' in df.columns: fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color='blue', width=1), name='SMA 50'))
             fig.update_layout(height=500, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- 企業業績 (Fundamentals) ---
+            # --- 企業業績 ---
             if info and info.get('quoteType') == 'EQUITY':
                 st.markdown("### 🏢 企業業績 (Annual Financials)")
                 if fin_df is not None and not fin_df.empty:
@@ -392,7 +396,7 @@ with tab_chart:
         fig_comp = go.Figure()
         for t in current_tickers:
             df, _, _ = get_stock_data(t, period_label)
-            if df is not None:
+            if df is not None and not df.empty:
                 start_price = df['Close'].iloc[0]
                 if start_price > 0:
                     norm = ((df['Close'] / start_price) - 1) * 100
@@ -404,26 +408,23 @@ with tab_chart:
 # --- タブ2: 相関マトリクス ---
 with tab_corr:
     st.header("🔢 相関分析")
-    st.info("2つ以上の銘柄を選択すると、連動性が表示されます（赤=正の相関、青=逆相関）。")
-    
     if len(current_tickers) >= 2:
-        with st.spinner("相関データを計算中..."):
+        with st.spinner("計算中..."):
             close_data = {}
             for t in current_tickers:
                 df, _, _ = get_stock_data(t, period_label)
-                if df is not None:
+                if df is not None and not df.empty:
                     close_data[t] = df['Close']
             
             if close_data:
                 df_corr = pd.DataFrame(close_data)
-                corr_matrix = df_corr.corr()
                 fig_heatmap = px.imshow(
-                    corr_matrix,
+                    df_corr.corr(),
                     text_auto=".2f",
                     aspect="auto",
                     color_continuous_scale="RdBu_r",
                     range_color=[-1, 1],
-                    title=f"相関係数ヒートマップ"
+                    title="相関係数ヒートマップ"
                 )
                 st.plotly_chart(fig_heatmap, use_container_width=True)
             else:
@@ -441,17 +442,16 @@ with tab_news:
             search_terms = [row['note'] if row['note'] else row['ticker'] for _, row in selected_rows.iterrows()]
         if not search_terms: search_terms = current_tickers
         
-        # 検索ワードの確認表示（自動抽出後のロジックをシミュレート）
+        # 実際にAPIに送るキーワードを表示（確認用）
         display_keywords = []
         for q in search_terms:
             base = q.replace('（', '(').split('(')[0].strip()
-            display_keywords.append(base)
             words = base.split()
             longs = [w for w in words if len(w) >= 4]
-            display_keywords.extend(longs)
+            display_keywords.extend(longs if longs else words)
         
-        unique_disp = list(set(display_keywords))[:15]
-        st.caption(f"検索ワード(自動抽出): {', '.join(unique_disp)} ...")
+        unique_disp = list(set(display_keywords))[:8]
+        st.caption(f"検索ワード(Top 8): {', '.join(unique_disp)} ...")
         
         with st.spinner("収集中..."):
             arts = get_massive_news(search_terms)
@@ -467,7 +467,7 @@ with tab_news:
                     c2.caption(f"{a['source']['name']} | {a['publishedAt'][:10]}")
                     c2.markdown(f"[Link]({a['url']})")
         else:
-            st.warning("ニュースなし。メモが正しいか確認してください")
+            st.warning("ニュースが見つかりませんでした")
     else:
         st.warning("銘柄を選択してください")
 
