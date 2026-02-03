@@ -5,7 +5,6 @@ import json
 import time
 from PIL import Image
 import PyPDF2
-import io
 
 # --- 1. 設定 ---
 st.set_page_config(page_title="Smart Lecture Mate", layout="wide")
@@ -15,13 +14,14 @@ try:
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    st.error("Secrets（APIキーなど）が設定されていません。")
+    st.error("Secrets (APIキーなど) が設定されていません。")
     st.stop()
 
+# SupabaseとGeminiの初期化
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 genai.configure(api_key=GEMINI_API_KEY)
 
-# --- 2. ファイル処理関数 ---
+# --- 2. ファイル読み込み関数 ---
 def extract_text_from_pdf(uploaded_file):
     try:
         pdf_reader = PyPDF2.PdfReader(uploaded_file)
@@ -29,176 +29,193 @@ def extract_text_from_pdf(uploaded_file):
         for page in pdf_reader.pages:
             text += page.extract_text() + "\n"
         return text
-    except Exception as e:
+    except:
         return None
 
-# --- 3. Gemini AI関数 (マルチモーダル対応) ---
+# --- 3. Gemini 1.5 Pro AI関数 ---
 def analyze_content(text_input, image_input=None):
-    # プロンプトの準備
+    # 最新モデルを指定
+    # gemini-1.5-pro: 最新かつ高性能。画像・PDF・長文すべてに対応。
+    model = genai.GenerativeModel('gemini-1.5-pro')
+    
+    # プロンプト（命令文）
     base_prompt = """
     あなたは大学の優秀なチューターです。
-    提供された講義資料（テキストまたは画像）をもとに、学習用の「要約」と「4択クイズ」を作成してください。
+    提供された講義資料（テキストまたは画像）の内容を深く理解し、学習用の「要点まとめ」と「4択クイズ」を作成してください。
     
-    【重要】必ず以下のJSONフォーマット（schema）のみを出力してください。Markdownのコードブロックは不要です。
+    【重要】出力は必ず以下のJSON形式のみにしてください。Markdownの ```json 等の囲みは不要です。
     
     {
-        "summary": "ここに要約文（マークダウン記法使用可）を記述",
+        "summary": "ここに要約文を記述（Markdown記法OK）",
         "quiz": [
             {
-                "question": "問題文",
+                "question": "クイズの問題文",
                 "options": ["選択肢A", "選択肢B", "選択肢C", "選択肢D"],
                 "answer_index": 0,
-                "explanation": "解説文"
+                "explanation": "正解の解説文"
             }
         ]
     }
     """
 
     try:
-        # 画像対応モデルに変更 (gemini-pro)
-        model = genai.GenerativeModel('gemini-pro')
-        
+        # AIに渡すデータを作成
         content = [base_prompt]
         
-        # 画像がある場合
         if image_input:
-            content.append("以下の講義ノート画像を解析してください：")
+            content.append("以下の講義ノート画像を参照してください：")
             content.append(image_input)
-            if text_input:
-                content.append(f"補足メモ: {text_input}")
-        # テキストのみの場合
-        else:
-            content.append(f"--- 講義メモ ---\n{text_input}")
+        
+        if text_input:
+            content.append(f"講義の補足テキスト/PDF内容:\n{text_input}")
 
-        # AIに送信
+        # AIにリクエスト送信
         response = model.generate_content(content)
         
-        # JSONクリーニング
+        # 結果の整形（JSONとして読み取れるようにクリーニング）
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(clean_text)
-        return data
+        return json.loads(clean_text)
+
     except Exception as e:
         return {"error": f"AI生成エラー: {e}"}
 
-# --- 4. データベース操作 ---
+# --- 4. データベース操作関数 ---
 def save_smart_note(subject, topic, json_data):
     data = {"subject": subject, "topic": topic, "content_json": json_data}
     supabase.table("smart_notes").insert(data).execute()
 
 def fetch_smart_notes():
+    # 新しい順に取得
     return supabase.table("smart_notes").select("*").order("created_at", desc=True).execute().data
 
 def delete_smart_note(note_id):
     supabase.table("smart_notes").delete().eq("id", note_id).execute()
 
-# --- 5. アプリ本体 ---
-st.title("🎓 Smart Lecture Mate (Pro)")
-st.caption("講義ノート画像・PDF・テキストからクイズを自動生成")
+# --- 5. アプリケーション画面 ---
+st.title("🎓 Smart Lecture Mate (Latest)")
+st.caption("Powered by Gemini 1.5 Pro - 画像・PDF対応の最新AIモデル搭載")
 
-tab1, tab2 = st.tabs(["📝 資料アップロード & 生成", "📚 復習モード"])
+tab1, tab2 = st.tabs(["📝 ノート作成", "📚 復習モード"])
 
-# === タブ1：生成モード ===
+# === タブ1：作成モード ===
 with tab1:
-    st.header("資料からノートを作成")
+    st.header("資料から学習ノートを生成")
     
     with st.container(border=True):
         c1, c2 = st.columns(2)
-        subject_in = c1.text_input("科目名", placeholder="データサイエンス概論")
-        topic_in = c2.text_input("テーマ", placeholder="第4回 統計基礎")
+        subject_in = c1.text_input("科目名", placeholder="例：データサイエンス")
+        topic_in = c2.text_input("テーマ", placeholder="例：第5回 統計分析")
         
-        # 入力タイプの切り替え
-        input_type = st.radio("入力データを選択", ["テキスト直接入力", "画像アップロード (ノート写真)", "PDFアップロード (資料)"], horizontal=True)
+        # 入力形式の選択
+        input_type = st.radio("入力データ", ["テキスト入力", "画像 (ノート写真)", "PDF (講義資料)"], horizontal=True)
         
         user_text = ""
         user_image = None
-        ready_to_submit = False
+        ready = False
 
-        if input_type == "テキスト直接入力":
+        if input_type == "テキスト入力":
             user_text = st.text_area("講義メモを入力", height=150)
-            if user_text: ready_to_submit = True
+            if user_text: ready = True
             
-        elif input_type == "画像アップロード (ノート写真)":
-            uploaded_img = st.file_uploader("ノートの画像をアップロード", type=["jpg", "png", "jpeg"])
-            if uploaded_img:
-                user_image = Image.open(uploaded_img)
-                st.image(user_image, caption="アップロードされた画像", width=300)
-                ready_to_submit = True
+        elif input_type == "画像 (ノート写真)":
+            img_file = st.file_uploader("画像をアップロード", type=["jpg", "png", "jpeg"])
+            if img_file:
+                user_image = Image.open(img_file)
+                st.image(user_image, caption="アップロード画像", width=300)
+                ready = True
                 
-        elif input_type == "PDFアップロード (資料)":
-            uploaded_pdf = st.file_uploader("講義資料PDFをアップロード", type=["pdf"])
-            if uploaded_pdf:
-                with st.spinner("PDFからテキストを読み取っています..."):
-                    extracted_text = extract_text_from_pdf(uploaded_pdf)
-                    if extracted_text:
-                        st.success(f"読み取り成功: {len(extracted_text)}文字")
-                        with st.expander("読み取った内容を確認"):
-                            st.text(extracted_text[:500] + "...")
-                        user_text = extracted_text
-                        ready_to_submit = True
+        elif input_type == "PDF (講義資料)":
+            pdf_file = st.file_uploader("PDFをアップロード", type=["pdf"])
+            if pdf_file:
+                with st.spinner("PDFを読み込み中..."):
+                    extracted = extract_text_from_pdf(pdf_file)
+                    if extracted:
+                        st.success(f"読み取り成功: {len(extracted)}文字")
+                        user_text = extracted
+                        ready = True
                     else:
-                        st.error("PDFからテキストを読み取れませんでした（画像化されたPDFの可能性があります）")
+                        st.error("テキストを読み取れませんでした（画像PDFの可能性があります）")
 
         st.markdown("---")
         
-        if st.button("🚀 AI分析スタート", type="primary", disabled=not ready_to_submit):
-            if subject_in:
-                with st.spinner("Gemini先生が資料を分析中...（画像の場合は少し時間がかかります）"):
-                    # 画像またはテキストを渡して解析
-                    result_json = analyze_content(user_text, user_image)
-                    
-                    if "error" in result_json:
-                        st.error(f"失敗しました: {result_json['error']}")
-                    else:
-                        st.session_state['gen_data'] = result_json
-                        st.session_state['gen_meta'] = {"subject": subject_in, "topic": topic_in}
-                        st.success("生成完了！")
-            else:
+        if st.button("🚀 AI分析スタート (1.5 Pro)", type="primary", disabled=not ready):
+            if not subject_in:
                 st.warning("科目名を入力してください")
+            else:
+                with st.spinner("Gemini 1.5 Pro が資料を深く分析しています..."):
+                    # AI分析実行
+                    result = analyze_content(user_text, user_image)
+                    
+                    if "error" in result:
+                        st.error(result['error'])
+                    else:
+                        # 結果を一時保存
+                        st.session_state['gen_result'] = result
+                        st.session_state['gen_meta'] = {"sub": subject_in, "top": topic_in}
+                        st.success("生成完了！")
 
-    # 生成結果プレビュー
-    if 'gen_data' in st.session_state:
-        data = st.session_state['gen_data']
+    # 生成結果のプレビューと保存
+    if 'gen_result' in st.session_state:
+        data = st.session_state['gen_result']
         meta = st.session_state['gen_meta']
         
         st.divider()
-        st.subheader(f"📄 分析結果: {meta['subject']}")
+        st.subheader(f"📄 分析結果: {meta['sub']}")
         st.info(data.get("summary", "要約なし"))
         
-        if st.button("💾 データベースに保存する"):
-            save_smart_note(meta['subject'], meta['topic'], data)
-            st.toast("保存しました！", icon="✅")
-            time.sleep(1)
-            del st.session_state['gen_data']
+        # 保存ボタン
+        if st.button("💾 データベースに保存"):
+            save_smart_note(meta['sub'], meta['top'], data)
+            st.toast("保存しました！復習タブで確認できます", icon="✅")
+            time.sleep(1.5)
+            del st.session_state['gen_result'] # クリア
             st.rerun()
 
-# === タブ2：復習モード (変更なし) ===
+# === タブ2：復習モード ===
 with tab2:
     st.header("復習・クイズ挑戦")
+    
     notes = fetch_smart_notes()
     if notes:
-        opts = {f"{n['subject']} - {n['topic']}": n for n in notes}
-        sel = st.selectbox("ノートを選択", list(opts.keys()))
-        note = opts[sel]
-        content = note['content_json']
+        # ノート選択メニュー
+        options = {f"{n['subject']} - {n['topic']} ({n['created_at'][:10]})": n for n in notes}
+        selected_label = st.selectbox("ノートを選択", list(options.keys()))
+        target_note = options[selected_label]
+        content = target_note['content_json']
         
-        with st.expander("要約を見る", expanded=True):
-            st.markdown(content.get("summary"))
+        # 要約の表示
+        with st.expander("📖 要点まとめを見る", expanded=True):
+            st.markdown(content.get("summary", "要約データなし"))
             
-        st.subheader("クイズ")
+        st.divider()
+        st.subheader("🔥 実践クイズ")
+        
+        # クイズ表示
         if "quiz" in content:
             for i, q in enumerate(content["quiz"]):
                 st.markdown(f"**Q{i+1}. {q['question']}**")
-                choice = st.radio("選択肢", q['options'], key=f"q_{note['id']}_{i}", index=None)
-                if st.button(f"答え合わせ Q{i+1}", key=f"b_{note['id']}_{i}"):
-                    if choice == q['options'][q['answer_index']]:
-                        st.success("正解！")
+                
+                # ユニークなキーを使ってラジオボタンを作成
+                user_ans = st.radio(
+                    "選択肢", 
+                    q['options'], 
+                    key=f"quiz_{target_note['id']}_{i}", 
+                    index=None
+                )
+                
+                if st.button(f"答え合わせ (Q{i+1})", key=f"btn_{target_note['id']}_{i}"):
+                    correct = q['options'][q['answer_index']]
+                    if user_ans == correct:
+                        st.success("🙆‍♀️ 正解！")
                     else:
-                        st.error(f"不正解... 正解は {q['options'][q['answer_index']]}")
-                    st.info(q['explanation'])
+                        st.error(f"🙅‍♂️ 不正解... 正解は「{correct}」")
+                    st.info(f"解説: {q['explanation']}")
                 st.divider()
         
-        if st.button("削除する"):
-            delete_smart_note(note['id'])
+        # 削除ボタン
+        if st.button("🗑️ このノートを削除"):
+            delete_smart_note(target_note['id'])
             st.rerun()
+            
     else:
-        st.info("データがありません")
+        st.info("まだノートがありません。「ノート作成」タブから追加してください。")
