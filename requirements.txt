@@ -1,7 +1,5 @@
 streamlit
 supabase
-pandas
-requests
-plotly
-yfinance
 google-generativeai
+Pillow
+PyPDF2
