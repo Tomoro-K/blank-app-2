@@ -33,8 +33,8 @@ def extract_text_from_pdf(uploaded_file):
         return None
 
 def analyze_content(text_input, image_input=None):
-    # ★修正：最もエラーが出にくい "gemini-1.5-flash" を指定
-    target_model = 'gemini-1.5-flash'
+    # ★修正：あなたのリストにあった「gemini-2.0-flash」を指定
+    target_model = 'gemini-2.0-flash'
     
     base_prompt = """
     あなたは大学の優秀なチューターです。講義資料をもとに、学習用「要約」と「4択クイズ」を作成してください。
@@ -61,17 +61,8 @@ def analyze_content(text_input, image_input=None):
         return json.loads(clean_text)
     
     except Exception as e:
-        # エラー発生時、使えるモデル一覧を表示するデバッグ機能
-        error_msg = f"エラー: {e}\n\n"
-        error_msg += "▼ あなたのAPIキーで利用可能なモデル一覧:\n"
-        try:
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    error_msg += f"- {m.name}\n"
-        except:
-            error_msg += "モデル一覧の取得にも失敗しました。"
-            
-        return {"error": error_msg}
+        # 万が一これでもダメな場合のエラー表示
+        return {"error": f"AI生成エラー: {e}"}
 
 # --- 3. データベース保存 ---
 def save_smart_note(subject, topic, json_data):
@@ -86,7 +77,7 @@ def delete_smart_note(note_id):
 
 # --- 4. アプリ画面 ---
 st.title("🎓 Smart Lecture Mate")
-st.caption("Powered by Gemini 1.5 Flash")
+st.caption(f"Powered by Gemini 2.0 Flash")
 
 tab1, tab2 = st.tabs(["📝 作成", "📚 復習"])
 
@@ -112,13 +103,11 @@ with tab1:
 
         if st.button("🚀 分析開始", type="primary"):
             if subject_in:
-                with st.spinner("Gemini 1.5 Flashが分析中..."):
+                with st.spinner("Gemini 2.0 Flashが分析中..."):
                     res = analyze_content(user_text, user_image)
                     if "error" in res:
-                        # エラー詳細を表示
                         st.error("AI分析に失敗しました")
-                        with st.expander("エラー詳細と利用可能なモデル"):
-                            st.text(res['error'])
+                        st.text(res['error'])
                     else:
                         st.session_state['res'] = res
                         st.session_state['meta'] = {"sub": subject_in, "top": topic_in}
