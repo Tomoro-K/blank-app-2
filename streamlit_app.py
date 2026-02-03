@@ -4,7 +4,6 @@ import yfinance as yf
 import plotly.graph_objects as go
 from supabase import create_client, Client
 from newsapi import NewsApiClient
-import datetime
 
 # --- 1. 設定 ---
 st.set_page_config(page_title="Pro Investor Dashboard", layout="wide")
@@ -40,16 +39,22 @@ TICKER_DATA = [
 
 # (A) テクニカル指標の計算
 def calculate_technicals(df):
+    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
 
+    # MACD
     ema12 = df['Close'].ewm(span=12, adjust=False).mean()
     ema26 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = ema12 - ema26
     df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    
+    # ★修正ポイント1: ここでSMA（移動平均）も計算しておくことでKeyErrorを防ぐ
+    df['SMA20'] = df['Close'].rolling(window=20).mean()
+    df['SMA50'] = df['Close'].rolling(window=50).mean()
     
     return df
 
@@ -71,16 +76,14 @@ def get_stock_data(ticker, period="1y", interval="1d"):
 def get_market_news(query):
     if not query: return []
     try:
-        # 検索ワードが短すぎるとエラーになることがあるのでチェック
-        if len(query) < 2: return []
-        
+        if len(query) < 2: return [] # 短すぎるクエリはスキップ
         all_articles = newsapi.get_everything(
             q=query,
             language='en',
             sort_by='publishedAt',
             page_size=10
         )
-        return all_articles['articles']
+        return all_articles.get('articles', [])
     except Exception:
         return []
 
@@ -104,31 +107,33 @@ st.title("📈 Pro Investor Dashboard")
 # タブ構成
 tab_chart, tab_news, tab_list = st.tabs(["📊 分析・チャート", "📰 関連ニュース", "📋 銘柄リスト"])
 
-# 銘柄選択ロジック（サイドバー）
+# サイドバー設定
 st.sidebar.header("設定パネル")
 with st.sidebar.expander("⭐ ウォッチリスト", expanded=True):
     w_df = fetch_watchlist()
     if not w_df.empty:
+        # 銘柄選択ロジック
         w_options = w_df['ticker'] + " - " + w_df['note'].fillna("")
         w_sel = st.radio("保存済み銘柄", w_options)
-        # 安全にデータ取得
+        
+        # 選択された行を安全に取得
         row = w_df[w_options == w_sel]
         if not row.empty:
             sel_ticker = row.iloc[0]['ticker']
+            sel_id = row.iloc[0]['id']
+            
+            if st.button("削除", key="del"):
+                delete_from_watchlist(int(sel_id))
+                st.rerun()
         else:
             sel_ticker = "AAPL"
-        
-        if st.button("削除", key="del"):
-            if not row.empty:
-                delete_from_watchlist(int(row.iloc[0]['id']))
-                st.rerun()
     else:
         sel_ticker = "AAPL"
 
-ticker_input = st.sidebar.text_input("コード直接入力", value=sel_ticker).upper().strip() # 空白除去
+ticker_input = st.sidebar.text_input("コード直接入力", value=sel_ticker).upper().strip()
 period = st.sidebar.selectbox("期間", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
 
-# データ取得実行
+# データ取得
 df, info = get_stock_data(ticker_input, period=period)
 
 # ==========================================
@@ -136,7 +141,7 @@ df, info = get_stock_data(ticker_input, period=period)
 # ==========================================
 with tab_chart:
     if df is not None and not df.empty:
-        # 会社名の安全な取得
+        # 会社名の取得（安全策）
         short_name = info.get('shortName', ticker_input) if info else ticker_input
         st.subheader(f"{short_name} ({ticker_input})")
         
@@ -150,56 +155,59 @@ with tab_chart:
         m3.metric("PER", f"{info.get('trailingPE', 0):.2f}" if info and info.get('trailingPE') else "-")
         m4.metric("配当", f"{info.get('dividendYield', 0)*100:.2f}%" if info and info.get('dividendYield') else "-")
         
-        # チャート
+        # --- メインチャート ---
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'))
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], mode='lines', name='SMA 20', line=dict(color='orange', width=1)))
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], mode='lines', name='SMA 50', line=dict(color='blue', width=1)))
+        
+        # ★修正ポイント: ここでSMA20/50を使うが、calculate_technicals関数で計算済みなのでエラーにならない
+        if 'SMA20' in df.columns:
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], mode='lines', name='SMA 20', line=dict(color='orange', width=1)))
+        if 'SMA50' in df.columns:
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], mode='lines', name='SMA 50', line=dict(color='blue', width=1)))
+        
         fig.update_layout(height=500, xaxis_rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
         
-        c_tech1, c_tech2 = st.columns(2)
-        with c_tech1:
+        # --- サブチャート ---
+        c1, c2 = st.columns(2)
+        with c1:
             fig_macd = go.Figure()
-            fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], name='MACD', line=dict(color='purple')))
-            fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal'], name='Signal', line=dict(color='orange')))
+            if 'MACD' in df.columns:
+                fig_macd.add_trace(go.Scatter(x=df.index, y=df['MACD'], name='MACD', line=dict(color='purple')))
+                fig_macd.add_trace(go.Scatter(x=df.index, y=df['Signal'], name='Signal', line=dict(color='orange')))
             fig_macd.update_layout(title="MACD", height=300)
             st.plotly_chart(fig_macd, use_container_width=True)
-        with c_tech2:
+        
+        with c2:
             fig_rsi = go.Figure()
-            fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='green')))
+            if 'RSI' in df.columns:
+                fig_rsi.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='green')))
             fig_rsi.add_hline(y=70, line_dash="dash", line_color="red")
             fig_rsi.add_hline(y=30, line_dash="dash", line_color="blue")
             fig_rsi.update_layout(title="RSI", height=300, yaxis=dict(range=[0, 100]))
             st.plotly_chart(fig_rsi, use_container_width=True)
-
     else:
-        st.warning("データを取得できませんでした。銘柄コードを確認してください。")
+        st.warning("データが見つかりません。銘柄コードを確認してください。")
 
 # ==========================================
-# タブ2：関連ニュース (エラー修正済み)
+# タブ2：関連ニュース (IndexError対策済み)
 # ==========================================
 with tab_news:
     st.header(f"📰 {ticker_input} 関連ニュース")
     
-    # ★ここを修正しました: エラー回避ロジック★
-    # データ取得に失敗していても、ticker_inputさえあれば検索できるようにする
-    if not ticker_input:
-        st.info("銘柄コードが入力されていません")
-    else:
-        # 名前が取れていれば使う、取れていなければコードだけで検索
-        # 空白分割でエラーにならないよう安全に処理
-        query_words = []
-        if info and 'shortName' in info and info['shortName']:
-            # 社名の最初の単語だけ使う (例: "Apple Inc." -> "Apple")
-            query_words.append(info['shortName'].split()[0])
-        
-        query_words.append(ticker_input)
-        
-        # "Apple OR AAPL" のような検索クエリを作成
-        search_q = " OR ".join(list(set(query_words)))
-        
-        # ニュース取得
+    # ★修正ポイント2: 検索ワード作成時のIndexErrorを完全に回避
+    query_words = [ticker_input]
+    
+    # infoが存在し、かつshortNameが文字列として存在する場合のみ追加
+    if info and isinstance(info.get('shortName'), str):
+        name_parts = info['shortName'].split()
+        if len(name_parts) > 0:
+            query_words.append(name_parts[0]) # 最初の単語 (例: "Apple")
+    
+    # 重複を消して " OR " でつなぐ
+    search_q = " OR ".join(list(set(query_words)))
+    
+    if search_q:
         with st.spinner("ニュース検索中..."):
             articles = get_market_news(search_q)
             
@@ -213,12 +221,14 @@ with tab_news:
                         else:
                             st.text("No Image")
                     with col_txt:
-                        st.subheader(art['title'])
+                        st.subheader(art.get('title', 'No Title'))
                         st.caption(f"{art['source']['name']} | {art['publishedAt'][:10]}")
-                        st.write(art['description'])
+                        st.write(art.get('description', ''))
                         st.markdown(f"[記事を読む]({art['url']})")
         else:
             st.info("関連ニュースが見つかりませんでした。")
+    else:
+        st.warning("検索ワードが生成できませんでした。")
 
 # ==========================================
 # タブ3：銘柄リスト
