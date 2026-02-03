@@ -1,231 +1,189 @@
 import streamlit as st
-import pandas as pd
-import requests
-import plotly.express as px
-import yfinance as yf
+import google.generativeai as genai
 from supabase import create_client, Client
-import datetime
-from datetime import timedelta
-import random # デモデータ生成用
+import json
+import time
 
-# --- 1. 設定とSupabase接続 ---
-st.set_page_config(page_title="Ultimate Asset Manager", layout="wide")
+# --- 1. 設定 ---
+st.set_page_config(page_title="Smart Lecture Mate", layout="wide")
 
 try:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    st.error("SupabaseのURLとKEYが設定されていません。")
+    st.error("Secrets（APIキーなど）が設定されていません。")
     st.stop()
 
-supabase: Client = create_client(url, key)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
-# --- 2. データ取得・計算API ---
-@st.cache_data(ttl=300)
-def get_market_indices():
-    tickers = {
-        "🇺🇸 S&P 500": "^GSPC", "🇯🇵 日経平均": "^N225", "💴 USD/JPY": "JPY=X",
-        "🥇 金 (Gold)": "GC=F", "₿ BTC/USD": "BTC-USD"
-    }
-    data = {}
-    try:
-        for name, ticker in tickers.items():
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="5d")
-            if len(hist) > 1:
-                latest = hist['Close'].iloc[-1]
-                prev = hist['Close'].iloc[-2]
-                change = latest - prev
-                pct = (change / prev) * 100
-                data[name] = {"price": latest, "change": change, "pct": pct}
-    except: pass
-    return data
+# --- 2. Gemini AI関数 (JSONモード) ---
+def analyze_lecture(text):
+    # AIにJSON形式での出力を強制する強力なプロンプト
+    prompt = f"""
+    あなたは大学の優秀なチューターです。
+    以下の講義メモをもとに、学習用の「要約」と「4択クイズ」を作成してください。
+    
+    【重要】必ず以下のJSONフォーマット（schema）のみを出力してください。Markdownのコードブロック(```json)は不要です。
+    
+    {{
+        "summary": "ここに要約文（マークダウン記法使用可）を記述",
+        "quiz": [
+            {{
+                "question": "問題文1",
+                "options": ["選択肢A", "選択肢B", "選択肢C", "選択肢D"],
+                "answer_index": 0,
+                "explanation": "解説文"
+            }},
+            {{
+                "question": "問題文2",
+                "options": ["選択肢A", "選択肢B", "選択肢C", "選択肢D"],
+                "answer_index": 2,
+                "explanation": "解説文"
+            }}
+        ]
+    }}
 
-@st.cache_data(ttl=3600)
-def get_stock_price(ticker):
-    if not ticker or ticker == "-": return None
+    --- 講義メモ ---
+    {text}
+    """
+    
     try:
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period="1d")
-        if not hist.empty: return hist['Close'].iloc[-1]
-    except: return None
-
-@st.cache_data(ttl=600)
-def get_crypto_price(coin_id):
-    try:
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=jpy"
-        return requests.get(url).json()[coin_id]["jpy"]
-    except: return 0.0
+        model = genai.GenerativeModel('gemini-pro')
+        response = model.generate_content(prompt)
+        # JSON文字列をPythonの辞書型に変換
+        clean_text = response.text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(clean_text)
+        return data
+    except Exception as e:
+        return {"error": f"AIの生成エラー: {e}"}
 
 # --- 3. データベース操作 ---
-def fetch_assets():
-    try:
-        return pd.DataFrame(supabase.table("assets").select("*").execute().data)
-    except: return pd.DataFrame()
+def save_smart_note(subject, topic, json_data):
+    data = {
+        "subject": subject,
+        "topic": topic,
+        "content_json": json_data # JSONをそのまま保存
+    }
+    supabase.table("smart_notes").insert(data).execute()
 
-def fetch_transactions():
-    try:
-        return pd.DataFrame(supabase.table("transactions").select("*").order("date", desc=True).limit(50).execute().data)
-    except: return pd.DataFrame()
+def fetch_smart_notes():
+    return supabase.table("smart_notes").select("*").order("created_at", desc=True).execute().data
 
-def upsert_asset(name, category, amount_change, currency="JPY", ticker=None):
-    existing = supabase.table("assets").select("*").eq("name", name).execute()
-    if existing.data:
-        rec_id = existing.data[0]['id']
-        new_amount = existing.data[0]['amount'] + amount_change
-        supabase.table("assets").update({"amount": new_amount}).eq("id", rec_id).execute()
-    else:
-        data = {"name": name, "category": category, "amount": amount_change, "currency": currency, "ticker": ticker}
-        supabase.table("assets").insert(data).execute()
-
-def add_transaction(date, type_, category, amount, memo):
-    data = {"date": str(date), "type": type_, "category": category, "amount": amount, "memo": memo}
-    supabase.table("transactions").insert(data).execute()
-
-# 履歴保存
-def save_daily_snapshot(total_value):
-    try:
-        today = str(datetime.date.today())
-        existing = supabase.table("asset_history").select("*").eq("date", today).execute()
-        if not existing.data:
-            supabase.table("asset_history").insert({"date": today, "total_value": total_value}).execute()
-        else:
-            supabase.table("asset_history").update({"total_value": total_value}).eq("id", existing.data[0]['id']).execute()
-    except Exception as e:
-        st.sidebar.error(f"履歴保存エラー: {e}")
-
-def fetch_history(days):
-    try:
-        start = datetime.date.today() - timedelta(days=days)
-        return pd.DataFrame(supabase.table("asset_history").select("*").gte("date", str(start)).order("date").execute().data)
-    except: return pd.DataFrame()
-
-# ★ デモデータ生成機能（グラフ表示用） ★
-def generate_demo_data():
-    # 過去30日分のダミーデータを作成
-    base_val = 1000000 # 100万円からスタート
-    for i in range(30):
-        d = datetime.date.today() - timedelta(days=30-i)
-        val = base_val * (1 + (random.random() - 0.4) * 0.1) # ランダム変動
-        # 存在チェックせずにインサート（簡易実装）
-        try:
-            supabase.table("asset_history").insert({"date": str(d), "total_value": int(val)}).execute()
-        except: pass
-    st.toast("デモデータを生成しました！")
+def delete_smart_note(note_id):
+    supabase.table("smart_notes").delete().eq("id", note_id).execute()
 
 # --- 4. アプリ本体 ---
+st.title("🎓 Smart Lecture Mate")
+st.caption("AIが「要約」と「クイズ」を自動生成する学習支援アプリ")
 
-# サイドバー
-st.sidebar.markdown("### 🌏 Market Watch")
-indices = get_market_indices()
-if indices:
-    for name, info in indices.items():
-        color = "normal" if info['change'] >= 0 else "inverse"
-        st.sidebar.metric(name, f"{info['price']:,.0f}", f"{info['pct']:.2f}%", delta_color=color)
+tab1, tab2 = st.tabs(["📝 ノート登録 & 生成", "📚 復習モード (クイズ)"])
 
-# ★ここにデモボタンを追加★
-st.sidebar.divider()
-if st.sidebar.button("🛠️ グラフ用デモデータ生成"):
-    generate_demo_data()
-    st.rerun()
-
-st.title("📊 Asset & Budget Dashboard")
-
-# 共通データ処理
-df_assets = fetch_assets()
-usd_rate = indices["USD/JPY"]["price"] if (indices and "USD/JPY" in indices) else 150.0
-btc_price = get_crypto_price("bitcoin")
-
-total_assets_jpy = 0
-if not df_assets.empty:
-    current_vals = []
-    for _, row in df_assets.iterrows():
-        val = 0
-        p = get_stock_price(row['ticker']) if row['ticker'] else 1
-        price = p if p else 1
+# === タブ1：生成モード ===
+with tab1:
+    st.header("新しいノートを作成")
+    
+    with st.container(border=True):
+        col1, col2 = st.columns(2)
+        subject_in = col1.text_input("科目名", placeholder="データサイエンス概論")
+        topic_in = col2.text_input("テーマ", placeholder="第3回 機械学習の基礎")
+        text_in = st.text_area("講義メモ・資料テキスト", height=150, placeholder="ここに講義の内容を貼り付けてください...")
         
-        if row['currency'] == 'USD': val = row['amount'] * price * usd_rate
-        elif row['currency'] == 'BTC': val = row['amount'] * btc_price
-        else: val = row['amount'] * price
-        current_vals.append(val)
+        if st.button("🚀 AI分析スタート", type="primary"):
+            if text_in and subject_in:
+                with st.spinner("Gemini先生が分析中...（約10秒）"):
+                    result_json = analyze_lecture(text_in)
+                    
+                    if "error" in result_json:
+                        st.error("生成に失敗しました。もう一度試してください。")
+                    else:
+                        st.session_state['generated_data'] = result_json
+                        st.session_state['meta_data'] = {"subject": subject_in, "topic": topic_in}
+                        st.success("生成完了！ 下で確認して保存してください。")
+            else:
+                st.warning("科目名とテキストを入力してください")
+
+    # 生成結果のプレビュー
+    if 'generated_data' in st.session_state:
+        data = st.session_state['generated_data']
+        meta = st.session_state['meta_data']
+        
+        st.divider()
+        st.subheader(f"📄 {meta['subject']} - {meta['topic']}")
+        
+        # 要約表示
+        st.info(data.get("summary", "要約なし"))
+        
+        # クイズプレビュー
+        st.markdown("##### 🎲 生成されたクイズ")
+        for i, q in enumerate(data.get("quiz", [])):
+            with st.expander(f"Q{i+1}: {q['question']}"):
+                st.write(f"正解: {q['options'][q['answer_index']]}")
+                st.caption(f"解説: {q['explanation']}")
+        
+        # 保存ボタン
+        if st.button("💾 データベースに保存する"):
+            save_smart_note(meta['subject'], meta['topic'], data)
+            st.toast("保存しました！復習タブで確認できます", icon="✅")
+            time.sleep(2)
+            del st.session_state['generated_data'] # クリア
+            st.rerun()
+
+# === タブ2：復習モード (ここが進化ポイント！) ===
+with tab2:
+    st.header("復習・クイズ挑戦")
     
-    df_assets['current_val_jpy'] = current_vals
-    total_assets_jpy = df_assets['current_val_jpy'].sum()
-    
-    # 履歴保存（エラーが出ても止まらないようにtry-except）
-    save_daily_snapshot(total_assets_jpy)
+    notes = fetch_smart_notes()
+    if notes:
+        # ノート選択
+        note_options = {f"{n['subject']} : {n['topic']} ({n['created_at'][:10]})": n for n in notes}
+        selected_label = st.selectbox("復習するノートを選択", list(note_options.keys()))
+        selected_note = note_options[selected_label]
+        
+        content = selected_note['content_json']
+        
+        st.divider()
+        
+        # 要約を見る
+        with st.expander("📖 要約を確認する", expanded=True):
+            st.markdown(content.get("summary", "No summary"))
+        
+        # インタラクティブ・クイズ
+        st.subheader("🔥 実践クイズ")
+        
+        if "quiz" in content:
+            for i, q in enumerate(content["quiz"]):
+                st.markdown(f"**Q{i+1}. {q['question']}**")
+                
+                # ユーザーの回答選択
+                # keyを一意にしないとエラーになるため工夫
+                user_choice = st.radio(
+                    "選択肢:", 
+                    q['options'], 
+                    key=f"q_{selected_note['id']}_{i}",
+                    index=None # 初期状態は未選択
+                )
+                
+                # 答え合わせボタン（選択直後に判定が出ると使いにくいのでボタン式に）
+                if st.button(f"答え合わせ (Q{i+1})", key=f"btn_{selected_note['id']}_{i}"):
+                    if user_choice:
+                        correct_option = q['options'][q['answer_index']]
+                        if user_choice == correct_option:
+                            st.success("🙆‍♀️ 正解！")
+                        else:
+                            st.error(f"🙅‍♂️ 残念... 正解は「{correct_option}」です")
+                        st.info(f"💡 解説: {q['explanation']}")
+                    else:
+                        st.warning("選択肢を選んでください")
+                st.divider()
+        
+        # 削除ボタン
+        with st.popover("🗑️ このノートを削除"):
+            st.write("本当に削除しますか？")
+            if st.button("削除実行"):
+                delete_smart_note(selected_note['id'])
+                st.rerun()
 
-# トップKPI
-kpi1, kpi2, kpi3 = st.columns(3)
-kpi1.metric("現在の総資産額", f"¥{total_assets_jpy:,.0f}")
-cash_assets = df_assets[df_assets['category'].str.contains('現金|預金|銀行')]['current_val_jpy'].sum() if not df_assets.empty else 0
-kpi2.metric("リスク資産", f"¥{total_assets_jpy - cash_assets:,.0f}")
-kpi3.metric("安全資産", f"¥{cash_assets:,.0f}")
-
-st.divider()
-
-# グラフエリア
-st.subheader("📈 資産と収支の分析")
-g_col1, g_col2, g_col3 = st.columns(3)
-
-# 1. 資産推移
-with g_col1:
-    st.markdown("**資産推移**")
-    df_hist = fetch_history(365)
-    if not df_hist.empty:
-        df_hist['date'] = pd.to_datetime(df_hist['date'])
-        # データが1点だけでも表示できるようにmarkers=True
-        fig_line = px.line(df_hist, x='date', y='total_value', markers=True)
-        fig_line.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=250)
-        st.plotly_chart(fig_line, use_container_width=True)
     else:
-        st.warning("👈 サイドバーの「デモデータ生成」を押すとグラフが出ます")
-
-# 2. ポートフォリオ
-with g_col2:
-    st.markdown("**ポートフォリオ**")
-    if not df_assets.empty and total_assets_jpy > 0:
-        fig_pie = px.pie(df_assets, values='current_val_jpy', names='category', hole=0.4)
-        fig_pie.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=250)
-        st.plotly_chart(fig_pie, use_container_width=True)
-    else:
-        st.info("資産データがありません")
-
-# 3. カテゴリ別収支
-with g_col3:
-    st.markdown("**支出内訳 (最新50件)**")
-    df_trans = fetch_transactions()
-    if not df_trans.empty:
-        df_exp = df_trans[df_trans['type'] == '支出']
-        if not df_exp.empty:
-            df_cat = df_exp.groupby('category')['amount'].sum().reset_index()
-            fig_bar = px.bar(df_cat, x='category', y='amount', color='category')
-            fig_bar.update_layout(showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=250)
-            st.plotly_chart(fig_bar, use_container_width=True)
-        else:
-            st.info("支出データがありません")
-    else:
-        st.info("家計簿データがありません")
-
-st.divider()
-
-# 入力フォーム（簡易版）
-st.subheader("📝 入出金入力")
-with st.container(border=True):
-    date_in = st.date_input("日付", datetime.date.today())
-    type_in = st.radio("収支", ["支出", "収入"], horizontal=True)
-    cat_in = st.text_input("カテゴリ (食費, 給与など)", "食費")
-    amt_in = st.number_input("金額", min_value=0)
-    memo_in = st.text_input("メモ")
-    
-    # 資産更新用（簡易）
-    asset_name = st.text_input("対象資産名 (例: 現金, 銀行)", "現金")
-    
-    if st.button("記録"):
-        # トランザクション
-        add_transaction(date_in, type_in, cat_in, amt_in, memo_in)
-        # 資産更新
-        change = amt_in if type_in == "収入" else -amt_in
-        upsert_asset(asset_name, "流動資産", change)
-        st.success("記録しました")
-        st.rerun()
+        st.info("まだノートがありません。「ノート登録」タブで作ってみましょう！")
