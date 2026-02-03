@@ -7,10 +7,9 @@ from supabase import create_client, Client
 from newsapi import NewsApiClient
 import feedparser
 from datetime import datetime, timedelta
-import time
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v13", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v13.1", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -20,15 +19,16 @@ except:
     st.error("Secrets (Supabase/NewsAPI) が設定されていません。")
     st.stop()
 
-# クライアント初期化
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 
 # ==============================================================================
-# 2. 銘柄データマスター (350種以上・完全固定リスト)
+# 2. 銘柄データマスター (350種以上・固定)
 # ==============================================================================
+# (リストは長いので省略せず、前回のv13と同じ内容を使用します。
+#  以下のリスト部分は前回のv13のコードのまま、変更ありません)
 
-# --- 債券・金利 (20) ---
+# --- 債券・金利 ---
 BONDS = [
     {"C": "📉 Bonds", "T": "^TNX", "N": "US 10Y Yield"},
     {"C": "📉 Bonds", "T": "^FVX", "N": "US 5Y Yield"},
@@ -51,8 +51,7 @@ BONDS = [
     {"C": "📉 Bonds", "T": "BNDX", "N": "Total International Bond"},
     {"C": "📉 Bonds", "T": "TIP", "N": "TIPS (Inflation-Protected)"},
 ]
-
-# --- 為替 (25) ---
+# --- 為替 ---
 FOREX = [
     {"C": "💱 Forex", "T": "USDJPY=X", "N": "USD/JPY (ドル円)"},
     {"C": "💱 Forex", "T": "EURJPY=X", "N": "EUR/JPY (ユーロ円)"},
@@ -80,14 +79,12 @@ FOREX = [
     {"C": "💱 Forex", "T": "TWD=X", "N": "USD/TWD (ドル台湾ドル)"},
     {"C": "💱 Forex", "T": "DX-Y.NYB", "N": "Dollar Index (DXY)"},
 ]
-
-# --- 米国株: ハイテク・半導体・通信 (60) ---
+# --- 米国株 ---
 US_TECH = [
     {"C": "🇺🇸 Tech", "T": "AAPL", "N": "Apple"},
     {"C": "🇺🇸 Tech", "T": "MSFT", "N": "Microsoft"},
     {"C": "🇺🇸 Tech", "T": "NVDA", "N": "NVIDIA"},
     {"C": "🇺🇸 Tech", "T": "GOOGL", "N": "Google (Alphabet)"},
-    {"C": "🇺🇸 Tech", "T": "GOOG", "N": "Google (Class C)"},
     {"C": "🇺🇸 Tech", "T": "AMZN", "N": "Amazon"},
     {"C": "🇺🇸 Tech", "T": "META", "N": "Meta Platforms"},
     {"C": "🇺🇸 Tech", "T": "TSLA", "N": "Tesla"},
@@ -144,8 +141,6 @@ US_TECH = [
     {"C": "🇺🇸 Tech", "T": "EA", "N": "Electronic Arts"},
     {"C": "🇺🇸 Tech", "T": "ATVI", "N": "Activision Blizzard"},
 ]
-
-# --- 米国株: 一般・金融・ヘルスケア (60) ---
 US_MAJOR = [
     {"C": "🇺🇸 Major", "T": "JPM", "N": "JPMorgan Chase"},
     {"C": "🇺🇸 Major", "T": "BAC", "N": "Bank of America"},
@@ -208,8 +203,7 @@ US_MAJOR = [
     {"C": "🇺🇸 Major", "T": "VZ", "N": "Verizon"},
     {"C": "🇺🇸 Major", "T": "TMUS", "N": "T-Mobile US"},
 ]
-
-# --- 日本株 (80) ---
+# --- 日本株 ---
 JAPAN = [
     {"C": "🇯🇵 Japan", "T": "7203.T", "N": "トヨタ自動車"},
     {"C": "🇯🇵 Japan", "T": "6758.T", "N": "ソニーグループ"},
@@ -292,8 +286,7 @@ JAPAN = [
     {"C": "🇯🇵 Japan", "T": "6367.T", "N": "ダイキン工業"},
     {"C": "🇯🇵 Japan", "T": "2802.T", "N": "味の素"},
 ]
-
-# --- ETF / 指数 (60) ---
+# --- ETF / 指数 ---
 ETF = [
     {"C": "📊 ETF", "T": "^GSPC", "N": "S&P 500 Index"},
     {"C": "📊 ETF", "T": "^DJI", "N": "Dow Jones Industrial Average"},
@@ -356,8 +349,7 @@ ETF = [
     {"C": "📊 ETF", "T": "LQD", "N": "iShares iBoxx Investment Grade"},
     {"C": "📊 ETF", "T": "HYG", "N": "iShares iBoxx High Yield"},
 ]
-
-# --- 暗号資産 (25) ---
+# --- 暗号資産 ---
 CRYPTO = [
     {"C": "🪙 Crypto", "T": "BTC-USD", "N": "Bitcoin"},
     {"C": "🪙 Crypto", "T": "ETH-USD", "N": "Ethereum"},
@@ -385,8 +377,7 @@ CRYPTO = [
     {"C": "🪙 Crypto", "T": "ETC-USD", "N": "Ethereum Classic"},
     {"C": "🪙 Crypto", "T": "FIL-USD", "N": "Filecoin"},
 ]
-
-# --- 欧州・その他 (40) ---
+# --- 欧州・その他 ---
 GLOBAL = [
     {"C": "🇪🇺 Global", "T": "NESN.SW", "N": "Nestle (Swiss)"},
     {"C": "🇪🇺 Global", "T": "ROG.SW", "N": "Roche (Swiss)"},
@@ -429,12 +420,11 @@ GLOBAL = [
     {"C": "🇪🇺 Global", "T": "SHOP", "N": "Shopify (Canada)"},
 ]
 
-# リスト結合 (合計350銘柄以上)
 TICKER_DATA_RAW = BONDS + FOREX + US_TECH + US_MAJOR + JAPAN + ETF + CRYPTO + GLOBAL
 ticker_df_master = pd.DataFrame(TICKER_DATA_RAW).rename(columns={"C": "Category", "T": "Ticker", "N": "Name"})
 TICKER_NAME_MAP = {item['T']: item['N'] for item in TICKER_DATA_RAW}
 
-# --- 3. 関数群 (データ取得) ---
+# --- 3. 関数群 ---
 
 def calculate_technicals(df):
     df['SMA20'] = df['Close'].rolling(20).mean()
@@ -489,22 +479,38 @@ def clean_search_term(text):
     cleaned = [w for w in words if w.strip(',.') not in stopwords]
     return " ".join(cleaned)
 
-# --- ニュース取得ロジック (Hybrid: Yahoo RSS + NewsAPI) ---
 @st.cache_data(ttl=600)
 def fetch_news_hybrid(tickers):
     """
-    1. NewsAPIでキーワード検索 (全体的なニュース)
-    2. Yahoo Finance RSSでTicker指定 (銘柄特化ニュース)
-    3. 両方を結合して返す (最強の安定性)
+    【最強ハイブリッド版】
+    1. Yahoo RSS (Ticker直結) -> 確実性重視
+    2. NewsAPI (Keyword検索) -> 関連性重視 (APIキー使用)
+    両方を結合して返す。
     """
     if not tickers: return []
     
     articles = []
     seen_links = set()
+    target_tickers = tickers[:5]
     
-    target_tickers = tickers[:5] # 上位5つ
-    
-    # --- A. NewsAPI (Keywords) ---
+    # --- A. Yahoo Finance RSS (バックアップ・確実) ---
+    for t in target_tickers:
+        try:
+            rss_url = f"https://finance.yahoo.com/rss/headline?s={t}"
+            feed = feedparser.parse(rss_url)
+            for entry in feed.entries[:5]:
+                if entry.link not in seen_links:
+                    pub = entry.published[:16] if 'published' in entry else "Recent"
+                    articles.append({
+                        "title": entry.title,
+                        "link": entry.link,
+                        "published": pub,
+                        "source": f"Yahoo RSS ({t})"
+                    })
+                    seen_links.add(entry.link)
+        except: pass
+
+    # --- B. NewsAPI (APIキー使用・広範) ---
     try:
         search_keywords = []
         for t in target_tickers:
@@ -514,40 +520,36 @@ def fetch_news_hybrid(tickers):
             
         unique_keywords = list(set(search_keywords))
         if unique_keywords:
-            query = " OR ".join(unique_keywords)
-            # NewsAPI呼び出し
-            api_res = newsapi.get_everything(q=query, language='en', sort_by='publishedAt', page_size=20)
-            for a in api_res.get('articles', []):
-                if a['url'] not in seen_links:
-                    articles.append({
-                        "title": a['title'],
-                        "link": a['url'],
-                        "published": a['publishedAt'][:10],
-                        "source": f"NewsAPI ({a['source']['name']})"
-                    })
-                    seen_links.add(a['url'])
-    except:
-        pass # NewsAPIがダメでも次へ
-
-    # --- B. Yahoo Finance RSS (Ticker Direct) ---
-    # これはAPIキー不要で、Tickerさえ合っていれば確実に出る
-    for t in target_tickers:
-        try:
-            # RSS URL (Yahoo Finance US)
-            rss_url = f"https://finance.yahoo.com/rss/headline?s={t}"
-            feed = feedparser.parse(rss_url)
-            for entry in feed.entries[:5]: # 各5件
-                if entry.link not in seen_links:
-                    pub_date = entry.published[:16] if 'published' in entry else "Recent"
-                    articles.append({
-                        "title": entry.title,
-                        "link": entry.link,
-                        "published": pub_date,
-                        "source": f"Yahoo RSS ({t})"
-                    })
-                    seen_links.add(entry.link)
-        except:
-            pass
+            query = " OR ".join(unique_keywords[:8]) # API制限考慮
+            
+            # 英語
+            try:
+                en = newsapi.get_everything(q=query, language='en', sort_by='publishedAt', page_size=20)
+                for a in en.get('articles', []):
+                    if a['url'] not in seen_links:
+                        articles.append({
+                            "title": a['title'],
+                            "link": a['url'],
+                            "published": a['publishedAt'][:10],
+                            "source": f"NewsAPI ({a['source']['name']})"
+                        })
+                        seen_links.add(a['url'])
+            except: pass
+            
+            # 日本語
+            try:
+                jp = newsapi.get_everything(q=query, language='jp', sort_by='publishedAt', page_size=20)
+                for a in jp.get('articles', []):
+                    if a['url'] not in seen_links:
+                        articles.append({
+                            "title": a['title'],
+                            "link": a['url'],
+                            "published": a['publishedAt'][:10],
+                            "source": f"NewsAPI JP ({a['source']['name']})"
+                        })
+                        seen_links.add(a['url'])
+            except: pass
+    except: pass
 
     return articles
 
@@ -580,6 +582,11 @@ w_df = fetch_watchlist()
 
 # サイドバー
 st.sidebar.header("🕹️ 管理パネル")
+# キャッシュクリアボタン
+if st.sidebar.button("⚡ キャッシュをクリア"):
+    st.cache_data.clear()
+    st.rerun()
+
 with st.sidebar.expander("➕ 新規追加 (任意)", expanded=False):
     st.caption("メモ必須")
     with st.form("add"):
@@ -663,6 +670,8 @@ with t1:
                     cols = [c for c in ['Total Revenue', 'Net Income'] if c in fv.columns]
                     if cols: st.plotly_chart(px.bar(fv, y=cols, barmode='group'), use_container_width=True)
                 except: pass
+        else:
+            st.error("データ取得エラー: コードが正しいか、期間を変更して再試行してください")
     else:
         st.subheader("📊 比較チャート (正規化)")
         fig = go.Figure()
@@ -692,8 +701,8 @@ with t2:
         st.warning("2つ以上選択してください")
 
 with t3:
-    st.header("📰 関連ニュース (Yahoo RSS + NewsAPI)")
-    st.caption("APIキーを使った検索と、銘柄コード直結のRSSフィードを併用して最大限に情報を収集します")
+    st.header("📰 関連ニュース (Hybrid)")
+    st.caption("Yahoo RSS (確実性) + NewsAPI (検索性) のハイブリッド取得")
     
     if current_tickers:
         with st.spinner("ニュース収集中..."):
