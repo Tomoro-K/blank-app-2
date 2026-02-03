@@ -8,7 +8,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v9", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v9.1", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -93,19 +93,35 @@ def calculate_technicals(df):
 
 @st.cache_data(ttl=300)
 def get_stock_data(ticker, period_key):
-    if not ticker: return None, None
+    # エラーの原因だった「複雑なオブジェクト(stock)」を返さず、
+    # 必要なデータ(financials)だけをDataFrameにして返すように修正
+    if not ticker: return None, None, None
+    
     yf_period = PERIOD_OPTIONS.get(period_key, "1y")
     yf_interval = get_interval_for_period(yf_period)
+    
     try:
         stock = yf.Ticker(ticker)
+        
+        # 株価データ取得
         if period_key == "3年":
             start_date = datetime.now() - timedelta(days=365*3)
             df = stock.history(start=start_date, interval=yf_interval)
         else:
             df = stock.history(period=yf_period, interval=yf_interval)
+        
         if not df.empty:
             df = calculate_technicals(df)
-        return df, stock, stock.info # stockオブジェクトも返すように変更
+            
+        # 財務データ取得 (ここでDataFrame化してしまう)
+        fin_df = pd.DataFrame()
+        try:
+            fin_df = stock.financials
+        except:
+            pass # 財務データがない場合(ETFなど)は空のまま
+            
+        return df, fin_df, stock.info
+        
     except:
         return None, None, None
 
@@ -147,7 +163,7 @@ def delete_from_watchlist(item_id):
 
 # --- 5. アプリ画面構築 ---
 
-st.title("📈 Pro Investor Dashboard v9")
+st.title("📈 Pro Investor Dashboard v9.1")
 
 if 'selected_tickers' not in st.session_state:
     st.session_state.selected_tickers = ["AAPL"]
@@ -208,8 +224,7 @@ else:
 # メインコンテンツ
 # ==========================================
 
-# 新機能: タブに「相関分析」を追加
-tab_chart, tab_corr, tab_news, tab_db = st.tabs(["📊 チャート詳細", "🔢 相関マトリクス (New)", "📰 関連ニュース", "📋 銘柄DB"])
+tab_chart, tab_corr, tab_news, tab_db = st.tabs(["📊 チャート詳細", "🔢 相関マトリクス", "📰 関連ニュース", "📋 銘柄DB"])
 
 # --- タブ1: チャート詳細 ---
 with tab_chart:
@@ -217,10 +232,11 @@ with tab_chart:
         st.info("👈 銘柄を選択してください")
     
     elif len(current_tickers) == 1:
-        # 単体モード (業績表示機能付き)
+        # 単体モード
         ticker = current_tickers[0]
         with st.spinner(f"{ticker} 分析中..."):
-            df, stock_obj, info = get_stock_data(ticker, period_label)
+            # 戻り値を3つ受け取る (fin_dfは既にDataFrame)
+            df, fin_df, info = get_stock_data(ticker, period_label)
         
         if df is not None:
             short_name = info.get('shortName', ticker) if info else ticker
@@ -244,38 +260,34 @@ with tab_chart:
             fig.update_layout(height=500, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- 新機能: 企業業績 (Fundamentals) ---
-            # 債券や為替には業績がないので、株式(Equity)のみ表示
+            # --- 企業業績 (Fundamentals) ---
             if info and info.get('quoteType') == 'EQUITY':
                 st.markdown("### 🏢 企業業績 (Annual Financials)")
-                try:
-                    # 財務データの取得
-                    financials = stock_obj.financials.T # 年次データ
-                    if not financials.empty:
-                        # 日付を文字列に変換して扱いやすくする
-                        financials.index = financials.index.strftime('%Y-%m-%d')
-                        fin_df = financials.sort_index()
+                # fin_dfは既にDataFrameなのでそのまま使える
+                if fin_df is not None and not fin_df.empty:
+                    try:
+                        financials = fin_df.T # 転置
+                        financials.index = pd.to_datetime(financials.index).strftime('%Y-%m-%d')
+                        fin_view = financials.sort_index()
                         
-                        # 主要項目があるかチェック
                         target_cols = ['Total Revenue', 'Net Income']
-                        existing_cols = [c for c in target_cols if c in fin_df.columns]
+                        existing_cols = [c for c in target_cols if c in fin_view.columns]
                         
                         if existing_cols:
-                            # 棒グラフで表示
                             fig_fin = px.bar(
-                                fin_df, 
+                                fin_view, 
                                 y=existing_cols, 
                                 barmode='group',
                                 title=f"{short_name} - 売上高 & 純利益",
-                                labels={"value": "Amount (Currency)", "index": "Year", "variable": "Metric"}
+                                labels={"value": "Amount", "index": "Year", "variable": "Metric"}
                             )
                             st.plotly_chart(fig_fin, use_container_width=True)
                         else:
-                            st.info("財務データの一部が取得できませんでした")
-                    else:
-                        st.info("財務データが見つかりませんでした")
-                except:
-                    st.caption("※ 財務データの取得に失敗しました (ETFや指数などの可能性があります)")
+                            st.caption("主要な財務項目が見つかりませんでした")
+                    except:
+                        st.caption("財務データの表示に失敗しました")
+                else:
+                    st.caption("財務データがありません")
 
     else:
         # 比較モード
@@ -292,14 +304,13 @@ with tab_chart:
         fig_comp.add_hline(y=0, line_dash="solid", line_color="white", opacity=0.3)
         st.plotly_chart(fig_comp, use_container_width=True)
 
-# --- タブ2: 相関マトリクス (New) ---
+# --- タブ2: 相関マトリクス ---
 with tab_corr:
-    st.header("🔢 相関分析 (Correlation Matrix)")
-    st.info("選択された銘柄間の「連動性」を分析します。1に近いほど同じ動き、-1に近いほど逆の動きをします。")
+    st.header("🔢 相関分析")
+    st.info("2つ以上の銘柄を選択すると、連動性が表示されます（赤=正の相関、青=逆相関）。")
     
     if len(current_tickers) >= 2:
         with st.spinner("相関データを計算中..."):
-            # Close価格だけのDataFrameを作成
             close_data = {}
             for t in current_tickers:
                 df, _, _ = get_stock_data(t, period_label)
@@ -308,30 +319,20 @@ with tab_corr:
             
             if close_data:
                 df_corr = pd.DataFrame(close_data)
-                # 相関係数を計算
                 corr_matrix = df_corr.corr()
-                
-                # ヒートマップ描画
                 fig_heatmap = px.imshow(
                     corr_matrix,
                     text_auto=".2f",
                     aspect="auto",
-                    color_continuous_scale="RdBu_r", # 赤=正の相関, 青=負の相関
+                    color_continuous_scale="RdBu_r",
                     range_color=[-1, 1],
-                    title=f"相関係数ヒートマップ (期間: {period_label})"
+                    title=f"相関係数ヒートマップ"
                 )
                 st.plotly_chart(fig_heatmap, use_container_width=True)
-                
-                st.markdown("""
-                **見方:**
-                * **赤色 (1.0に近い):** 正の相関。片方が上がれば、もう片方も上がる傾向。
-                * **青色 (-1.0に近い):** 負の相関。片方が上がれば、もう片方は下がる傾向（分散投資に有効）。
-                * **白色 (0に近い):** 無相関。互いに影響しない。
-                """)
             else:
-                st.error("データが不足しており計算できません")
+                st.error("データ不足")
     else:
-        st.warning("相関分析には、左のボタンで **2つ以上の銘柄** を選択してください。")
+        st.warning("2つ以上の銘柄を選択してください")
 
 # --- タブ3: ニュース ---
 with tab_news:
