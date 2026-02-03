@@ -8,7 +8,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 
 # --- 1. 設定 ---
-st.set_page_config(page_title="Pro Investor Dashboard v10", layout="wide")
+st.set_page_config(page_title="Pro Investor Dashboard v10.1", layout="wide")
 
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -26,7 +26,7 @@ newsapi = NewsApiClient(api_key=NEWS_API_KEY)
 # 2. 銘柄データマスター (約350銘柄 固定リスト)
 # ==============================================================================
 
-# --- 債券・金利 (Bonds & Yields) ---
+# --- 債券・金利 ---
 BONDS = [
     {"C": "📉 Bonds", "T": "^TNX", "N": "US 10Y Yield (米国10年債)"},
     {"C": "📉 Bonds", "T": "^FVX", "N": "US 5Y Yield (米国5年債)"},
@@ -44,7 +44,7 @@ BONDS = [
     {"C": "📉 Bonds", "T": "TIP", "N": "TIPS Bond (物価連動国債)"},
 ]
 
-# --- 為替 (Forex) ---
+# --- 為替 ---
 FOREX = [
     {"C": "💱 Forex", "T": "USDJPY=X", "N": "USD/JPY (ドル円)"},
     {"C": "💱 Forex", "T": "EURJPY=X", "N": "EUR/JPY (ユーロ円)"},
@@ -64,7 +64,7 @@ FOREX = [
     {"C": "💱 Forex", "T": "DX-Y.NYB", "N": "Dollar Index (ドル指数)"},
 ]
 
-# --- 米国株: ハイテク・半導体 (US Tech & Semi) ---
+# --- 米国株: ハイテク・半導体 ---
 US_TECH = [
     {"C": "🇺🇸 Tech/Semi", "T": "AAPL", "N": "Apple"},
     {"C": "🇺🇸 Tech/Semi", "T": "MSFT", "N": "Microsoft"},
@@ -109,7 +109,7 @@ US_TECH = [
     {"C": "🇺🇸 Tech/Semi", "T": "NET", "N": "Cloudflare"},
 ]
 
-# --- 米国株: 主要セクター (US Major) ---
+# --- 米国株: 主要セクター ---
 US_MAJOR = [
     {"C": "🇺🇸 US Major", "T": "JPM", "N": "JPMorgan Chase"},
     {"C": "🇺🇸 US Major", "T": "BAC", "N": "Bank of America"},
@@ -155,7 +155,7 @@ US_MAJOR = [
     {"C": "🇺🇸 US Major", "T": "GM", "N": "General Motors"},
 ]
 
-# --- 日本株 (Japan) ---
+# --- 日本株 ---
 JAPAN = [
     {"C": "🇯🇵 Japan", "T": "7203.T", "N": "トヨタ自動車"},
     {"C": "🇯🇵 Japan", "T": "6758.T", "N": "ソニーグループ"},
@@ -216,7 +216,7 @@ JAPAN = [
     {"C": "🇯🇵 Japan", "T": "9202.T", "N": "ANAホールディングス"},
 ]
 
-# --- ETF / 指数 (Indices) ---
+# --- ETF / 指数 ---
 ETF = [
     {"C": "📊 ETF/Index", "T": "^GSPC", "N": "S&P 500 Index"},
     {"C": "📊 ETF/Index", "T": "^DJI", "N": "Dow Jones Industrial Average"},
@@ -269,7 +269,7 @@ ETF = [
     {"C": "📊 ETF/Index", "T": "VNQ", "N": "Vanguard Real Estate ETF"},
 ]
 
-# --- 暗号資産 (Crypto) ---
+# --- 暗号資産 ---
 CRYPTO = [
     {"C": "🪙 Crypto", "T": "BTC-USD", "N": "Bitcoin"},
     {"C": "🪙 Crypto", "T": "ETH-USD", "N": "Ethereum"},
@@ -352,47 +352,53 @@ def get_stock_data(ticker, period_key):
     except:
         return None, None, None
 
-def clean_search_term(text):
-    if not text: return ""
-    # カッコ除去
-    text = text.replace('（', '(').split('(')[0].strip()
-    
-    # 検索ノイズになりやすい単語を削除
-    stopwords = ["Inc", "Corp", "Corporation", "Ltd", "Limited", "Holdings", "Group", "Company", "Co", "plc", "S.A.", "N.V."]
-    words = text.split()
-    cleaned_words = [w for w in words if w.strip(',.') not in stopwords]
-    
-    return " ".join(cleaned_words)
-
 @st.cache_data(ttl=600)
 def get_massive_news(tickers):
     """
-    【スマート検索版】
-    選択されたTickerを受け取り、辞書(TICKER_NAME_MAP)またはメモから
-    最適な名称を自動的に引き当て、クリーニングして検索する。
+    【スマート検索 v2】
+    辞書(TICKER_NAME_MAP)またはメモから名称を取得し、
+    さらに「4文字以上の単語」に分解して、広く検索する。
     """
     if not tickers: return []
     
+    # 1. 名称のリストアップ (辞書優先 -> メモ -> Ticker)
+    # ここではtickersはすでにUI側で処理されたTickerのリストと仮定
+    
+    base_names = []
+    
+    # UI側でDBアクセスしてメモを渡すのは複雑になるため、
+    # ここでは「辞書にあるものは辞書名」「なければTicker」として扱う
+    # (本当はUI側で解決した名前リストをもらうのがベストだが、互換性維持のため)
+    
+    for t in tickers:
+        if t in TICKER_NAME_MAP:
+            base_names.append(TICKER_NAME_MAP[t])
+        else:
+            # 辞書にない＝手動追加。
+            # ここではTickerそのものを使うしかないが、UI側で工夫している
+            base_names.append(t)
+            
+    # 2. 単語分解＆抽出
     search_keywords = []
     
-    # API制限考慮: 上位5銘柄に絞る
-    target_tickers = tickers[:5]
-    
-    for t in target_tickers:
-        if t in TICKER_NAME_MAP:
-            # プリセットにある場合はそのきれいな名前を使う
-            raw_name = TICKER_NAME_MAP[t]
+    for name in base_names:
+        # カッコ除去
+        clean = name.replace('（', '(').split('(')[0].strip()
+        
+        # 単語に分解
+        words = clean.split()
+        
+        # 4文字以上の単語を抽出
+        long_words = [w for w in words if len(w) >= 4]
+        
+        if long_words:
+            search_keywords.extend(long_words)
         else:
-            # ない場合はTickerそのまま (UI側でメモを渡すロジックと組み合わせる)
-            raw_name = t
+            # 短い単語しかない場合（例: "GDP"）はそのまま使う
+            search_keywords.extend(words)
             
-        # クリーニング
-        clean_name = clean_search_term(raw_name)
-        if clean_name and len(clean_name) >= 2:
-            search_keywords.append(clean_name)
-            
-    # 重複削除
-    unique_keywords = list(set(search_keywords))
+    # 3. 重複削除 & 上位15個に制限
+    unique_keywords = list(set(search_keywords))[:15]
     if not unique_keywords: return []
 
     # OR検索
@@ -569,17 +575,17 @@ with tab_corr:
     else:
         st.warning("2つ以上選択してください")
 
-# --- タブ3: ニュース (AI検索) ---
+# --- タブ3: ニュース ---
 with tab_news:
     st.header("📰 関連ニュース (AI自動検索)")
     if current_tickers:
-        # ロジック: Tickerリストを渡し、関数内で辞書を使って名前解決＆検索
+        # ここでロジックを統合: 辞書 or DBメモ を渡す
         search_candidates = []
         for t in current_tickers:
             if t in TICKER_NAME_MAP:
                 search_candidates.append(TICKER_NAME_MAP[t])
             else:
-                # 辞書にない場合はDBのメモを使う
+                # 辞書になければDBメモ
                 row = w_df[w_df['ticker'] == t]
                 if not row.empty:
                     note = row.iloc[0]['note']
@@ -587,11 +593,10 @@ with tab_news:
                 else:
                     search_candidates.append(t)
         
-        clean_display = [clean_search_term(q) for q in search_candidates]
-        st.caption(f"検索ワード: {', '.join(clean_display[:5])} ...")
+        # 確認用
+        st.caption(f"検索ソース: {', '.join(search_candidates[:5])} ...")
         
         with st.spinner("ニュース収集中..."):
-            # 文字列リストを渡す
             arts = get_massive_news(search_candidates)
         
         if arts:
